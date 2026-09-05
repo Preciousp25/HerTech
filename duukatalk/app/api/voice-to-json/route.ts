@@ -7,7 +7,7 @@ import { toFirestoreTransaction } from "@/lib/firestore-transaction";
 
 export const runtime = "nodejs";
 
-const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const TRANSACTIONS_COLLECTION = "transactions"; // confirm exact name with Sanyu
 
 export async function POST(request: NextRequest): Promise<NextResponse<VoiceToJsonResponse>> {
