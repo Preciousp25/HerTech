@@ -370,7 +370,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
 
   // 2. LEDGERS SCREEN
   const renderLedgersScreen = () => (
-    <div className="space-y-4 relative min-h-145">
+<div className="space-y-4 relative min-h-[36.25rem]">
       {/* Date Navigation & Controls */}
       <div className="flex items-center justify-between gap-2">
         <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
