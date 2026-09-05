@@ -40,7 +40,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<VoiceToJs
 
   if (audioEntry.size > MAX_FILE_SIZE_BYTES) {
     return NextResponse.json(
-      { success: false, error: "Audio file exceeds maximum allowed size (15MB)" },
+      { success: false, error: "Audio file exceeds maximum allowed size (50MB)" },
       { status: 400 }
     );
   }
