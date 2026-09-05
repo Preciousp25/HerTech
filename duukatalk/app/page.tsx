@@ -595,7 +595,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
 
   return (
     <div className={`min-h-screen flex justify-center items-center ${isDarkMode ? 'bg-gray-950 text-white' : 'bg-slate-100 text-slate-800'}`}>
-      <div className={`w-full max-w-md min-h-screen sm:min-h-0 sm:h-210 sm:rounded-3xl shadow-2xl flex flex-col justify-between overflow-hidden relative ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+      <div className={`w-full max-w-md min-h-screen sm:min-h-0 sm:h-[52.5rem] sm:rounded-3xl shadow-2xl flex flex-col justify-between overflow-hidden relative ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
         
         {/* App Header */}
         <header className="bg-blue-900 text-white px-5 py-4 flex items-center justify-between shadow-md">
