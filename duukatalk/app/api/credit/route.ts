@@ -10,7 +10,7 @@ export async function GET() {
 		const balances: Record<string, { owed: number; dueDates: string[] }> = {};
 
 		for (const txn of transactions) {
-			if (txn.payment_type !== "credit") continue;
+			if (txn.payment_type?.toLowerCase() !== "credit") continue;
 
 			const name = txn.customer_name || "Unknown";
 			const amount = Number(txn.total_amount) || 0;
