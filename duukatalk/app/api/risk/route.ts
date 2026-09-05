@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { collection, getDocs } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { db } from "@/lib/firebase";
 
 const CREDIT_LIMIT = 15000;
 const LARGE_QUANTITY_THRESHOLD = 20;
