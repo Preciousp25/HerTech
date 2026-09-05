@@ -102,7 +102,7 @@ export default function DuukaTalkApp() {
 
   // Screen 1: Record Form State
   const [isRecording, setIsRecording] = useState<boolean>(false);
-  const [formData, setFormData] = useState({ customer: '', item: '', amount: '', paymentType: 'cash' });
+const [formData, setFormData] = useState<{ customer: string; item: string; amount: string; paymentType: Transaction['type'] }>({ customer: '', item: '', amount: '', paymentType: 'cash' });
 
   // Screen 2: Ledgers State
   const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly'>('daily');
