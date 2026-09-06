@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collection, doc, getDocs, setDoc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
+import { getNextTransactionId } from "../../../lib/transaction-id";
 
 export async function GET() {
   try {
@@ -35,9 +36,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const transactionRef = doc(collection(db, "transactions"));
+    const transactionId = await getNextTransactionId();
+    const transactionRef = doc(db, "transactions", transactionId);
     const transaction = {
-      transaction_id: transactionRef.id,
+      transaction_id: transactionId,
       customer_name: customerName,
       item,
       total_amount: totalAmount,
@@ -47,7 +49,7 @@ export async function POST(request: NextRequest) {
     };
 
     await setDoc(transactionRef, transaction);
-    return NextResponse.json({ id: transactionRef.id, ...transaction }, { status: 201 });
+    return NextResponse.json({ id: transactionId, ...transaction }, { status: 201 });
   } catch (error) {
     console.error("Error saving ledger transaction:", error);
     return NextResponse.json({ error: "Failed to save transaction" }, { status: 500 });

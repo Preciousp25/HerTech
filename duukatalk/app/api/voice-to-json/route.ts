@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { collection, doc, setDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { getAiProvider } from "@/lib/ai-provider";
 import { VoiceToJsonResponse } from "@/lib/schema";
 import { db } from "@/lib/firebase";
 import { toFirestoreTransaction } from "@/lib/firestore-transaction";
+import { getNextTransactionId } from "@/lib/transaction-id";
 
 export const runtime = "nodejs";
 
@@ -62,11 +63,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<VoiceToJs
     const provider = getAiProvider();
     const result = await provider.processAudio(audioBuffer, mimeType);
 
-    const docRef = doc(collection(db, TRANSACTIONS_COLLECTION));
+    const transactionId = await getNextTransactionId();
+    const docRef = doc(db, TRANSACTIONS_COLLECTION, transactionId);
     const firestoreTransaction = toFirestoreTransaction(
       result.transaction,
       result.transcript,
-      docRef.id
+      transactionId
     );
 
     await setDoc(docRef, firestoreTransaction);
