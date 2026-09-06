@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { collection, getDocs } from "firebase/firestore";
+import { NextRequest, NextResponse } from "next/server";
+import { collection, doc, getDocs, setDoc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 
 export async function GET() {
@@ -17,5 +17,39 @@ export async function GET() {
       { error: "Failed to fetch transactions" },
       { status: 500 }
     );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const customerName = String(body.customer_name || "").trim();
+    const item = String(body.item || "").trim();
+    const totalAmount = Number(body.total_amount);
+    const paymentType = body.payment_type === "credit" ? "credit" : "cash";
+
+    if (!customerName || !item || !Number.isFinite(totalAmount) || totalAmount <= 0) {
+      return NextResponse.json(
+        { error: "customer_name, item, and a positive total_amount are required" },
+        { status: 400 },
+      );
+    }
+
+    const transactionRef = doc(collection(db, "transactions"));
+    const transaction = {
+      transaction_id: transactionRef.id,
+      customer_name: customerName,
+      item,
+      total_amount: totalAmount,
+      payment_type: paymentType,
+      type: paymentType === "cash" ? "sale" : "credit",
+      timestamp: new Date().toISOString(),
+    };
+
+    await setDoc(transactionRef, transaction);
+    return NextResponse.json({ id: transactionRef.id, ...transaction }, { status: 201 });
+  } catch (error) {
+    console.error("Error saving ledger transaction:", error);
+    return NextResponse.json({ error: "Failed to save transaction" }, { status: 500 });
   }
 }

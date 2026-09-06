@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   Mic, 
   Moon, 
@@ -99,6 +99,9 @@ export default function DuukaTalkApp() {
   const [summary, setSummary] = useState<ApiSummary | null>(null);
   const [riskFlags, setRiskFlags] = useState<ApiRiskFlag[]>([]);
   const [apiError, setApiError] = useState('');
+  const [voiceMessage, setVoiceMessage] = useState('');
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   // Screen 1: Record Form State
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -175,7 +178,55 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
   const text = (english: string, luganda: string) => language === 'EN' ? english : language === 'LUG' ? luganda : `${english} · ${luganda}`;
   const toggleTheme = () => setIsDarkMode(prev => !prev);
 
-  const handleSaveEntry = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleVoiceRecording = async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setVoiceMessage(text('Voice recording is not supported in this browser.', 'Browser eno tegusobola kuwandiika na ddoboozi.'));
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      mediaRecorderRef.current = recorder;
+
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      });
+      recorder.addEventListener('stop', async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        setIsRecording(false);
+        setVoiceMessage(text('Processing recording...', 'Tukola ku ddoboozi...'));
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'sale.webm');
+
+        try {
+          const response = await fetch('/api/voice-to-json', { method: 'POST', body: formData });
+          const result = await response.json() as { success?: boolean; error?: string; transcript?: string };
+          if (!response.ok || !result.success) throw new Error(result.error || 'Voice processing failed');
+          setVoiceMessage(result.transcript ? `Heard: ${result.transcript}` : text('Voice entry saved.', 'Ekiwandiiko kyawandiikiddwa.'));
+          window.location.reload();
+        } catch (error) {
+          setVoiceMessage(error instanceof Error ? error.message : text('Voice processing failed.', 'Okukola ku ddoboozi kulemedde.'));
+        }
+      });
+
+      recorder.start();
+      setIsRecording(true);
+      setVoiceMessage(text('Listening... tap again to stop.', 'Mpuliriza... nyiga nate okukomya.'));
+    } catch {
+      setVoiceMessage(text('Microphone access was denied. Allow microphone access and try again.', 'Tonnakkiriza microphone. Kiriza microphone oddemu ogezeeko.'));
+    }
+  };
+
+  const handleSaveEntry = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const amount = Number(formData.amount);
 
@@ -185,15 +236,32 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
     }
 
     const customerName = formData.customer.trim();
+    const response = await fetch('/api/ledger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customer_name: customerName,
+        item: formData.item.trim(),
+        total_amount: amount,
+        payment_type: formData.paymentType,
+      }),
+    });
+
+    if (!response.ok) {
+      setFormMessage(text('Could not save entry. Try again.', 'Ekiwandiiko tekisobose kukuumibwa. Gezako nate.'));
+      return;
+    }
+
+    const savedTransaction = await response.json() as { id: string; timestamp: string };
     const newTransaction: Transaction = {
-      id: crypto.randomUUID(),
+      id: savedTransaction.id,
       customer: customerName,
       initials: customerName.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
       item: formData.item.trim(),
       amount,
       type: formData.paymentType as Transaction['type'],
       dueDate: formData.paymentType === 'credit' ? 'Due soon' : undefined,
-      date: 'Just now',
+      date: savedTransaction.timestamp ? new Date(savedTransaction.timestamp).toLocaleString() : 'Just now',
     };
 
     setTransactions((currentTransactions) => [newTransaction, ...currentTransactions]);
@@ -249,7 +317,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
       {/* Voice Record Hero */}
       <div className="bg-blue-900 rounded-2xl p-6 text-center text-white flex flex-col items-center justify-center shadow-inner">
         <button 
-          onClick={() => setIsRecording(!isRecording)}
+          onClick={() => void handleVoiceRecording()}
           className={`w-20 h-20 rounded-full flex items-center justify-center transition-all transform active:scale-95 shadow-lg ${
             isRecording ? 'bg-red-500 ring-8 ring-red-400/30 animate-pulse' : 'bg-white text-blue-900 hover:bg-blue-50'
           }`}
@@ -261,6 +329,8 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
           {text('Record a sale or debt in English or Luganda', 'Wandiika amagoba oba amabanja mu Lungereza oba Luganda')}
         </p>
       </div>
+
+      {voiceMessage && <p className="rounded-lg bg-blue-50 px-3 py-2 text-center text-xs text-blue-800" role="status">{voiceMessage}</p>}
 
       {apiError && <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-800" role="status">{text('Live data is unavailable for some screens. Showing local data.', "Data y'okukola tebiriwo ku screen ezimu. Tulaga data ey'omu kitundu.")}</p>}
 
