@@ -313,13 +313,19 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
       date: new Date(localTimestamp).toLocaleString(),
     };
 
+    let savedOnline = false;
     try {
       const response = await fetch('/api/ledger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!response.ok) throw new Error('Save failed');
+      if (!response.ok) {
+        const result = await response.json() as { error?: string };
+        setFormMessage(result.error || text('Could not save entry. Try again.', 'Ekiwandiiko tekisobose kukuumibwa. Gezako nate.'));
+        return;
+      }
+      savedOnline = true;
     } catch {
       const queue = readOfflineQueue();
       writeOfflineQueue([...queue, { payload, transaction: newTransaction }]);
@@ -334,7 +340,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
       ]);
     }
     setFormData({ customer: '', item: '', amount: '', paymentType: 'cash' });
-    if (navigator.onLine) setFormMessage(text('Entry saved to your ledger.', 'Ekiwandiiko kiteekeddwa mu bitabo byo.'));
+    if (savedOnline) setFormMessage(text('Entry saved to your ledger.', 'Ekiwandiiko kiteekeddwa mu bitabo byo.'));
     setActiveTab('ledgers');
   };
 
