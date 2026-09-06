@@ -37,7 +37,13 @@ class OpenAiProvider implements AiProvider {
 
   async processAudio(audioBuffer: Buffer, mimeType: string): Promise<TranscriptionResult> {
     const base64Audio = audioBuffer.toString("base64");
-    const format = mimeType.includes("wav") ? "wav" : "mp3";
+    const format = mimeType.includes("wav") ? "wav" : mimeType.includes("mpeg") || mimeType.includes("mp3") ? "mp3" : null;
+
+    if (!format) {
+      throw new Error(
+        `OpenAI audio input does not support ${mimeType || "this recording format"}. Set AI_PROVIDER=gemini for browser WebM recordings.`,
+      );
+    }
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
