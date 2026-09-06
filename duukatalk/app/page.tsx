@@ -1,18 +1,18 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { 
-  Mic, 
-  Moon, 
-  Sun, 
-  Store, 
-  User, 
-  Package, 
-  DollarSign, 
-  CheckCircle, 
-  BookOpen, 
-  CreditCard, 
-  BarChart3, 
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Mic,
+  Moon,
+  Sun,
+  Store,
+  User,
+  Package,
+  DollarSign,
+  CheckCircle,
+  BookOpen,
+  CreditCard,
+  BarChart3,
   Edit3,
   Search,
   ChevronLeft,
@@ -21,7 +21,8 @@ import {
   AlertCircle,
   TrendingUp,
   Phone,
-  Plus
+  Plus,
+  Loader2
 } from 'lucide-react';
 
 // --- TYPES & MOCK DATA ---
@@ -77,6 +78,25 @@ interface ApiRiskFlag {
   message: string;
 }
 
+// Shape returned by POST /api/voice-to-json on success
+interface VoiceTransaction {
+  item?: string | null;
+  quantity?: number | null;
+  unit?: string | null;
+  unitPrice?: number | null;
+  customerName?: string | null;
+  paymentType?: string | null;
+  dueDate?: string | null;
+  timestamp?: string | null;
+}
+
+interface VoiceToJsonResponse {
+  success: boolean;
+  transcript?: string;
+  transaction?: VoiceTransaction;
+  error?: string;
+}
+
 const MOCK_TRANSACTIONS: Transaction[] = [
   { id: '1', customer: 'Ssekandi Patrick', initials: 'SP', item: 'Maize flour 10kg', amount: 22000, type: 'cash', date: 'Today, 2:30 PM' },
   { id: '2', customer: 'Auma Christine', initials: 'AC', item: 'Beans 2kg, Sugar', amount: 18000, type: 'credit', dueDate: 'Due Monday', date: 'Today, 11:15 AM' },
@@ -88,6 +108,33 @@ const INITIAL_DEBTS: Debt[] = [
   { id: '1', customer: 'Auma Christine', initials: 'AC', item: 'Beans 2kg, Sugar', amount: 18000, dueDate: 'Due Monday' },
   { id: '2', customer: 'Nakato Grace', initials: 'NG', item: '2kg Super Rice', amount: 10000, dueDate: 'Due Friday' },
 ];
+
+// --- HELPERS (pure, outside the component so they don't need to be re-created every render) ---
+
+function deriveInitials(name: string): string {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+  return initials || '??';
+}
+
+function safeFormatDate(value?: string | null): string | undefined {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toLocaleDateString();
+}
+
+function safeFormatDateTime(value?: string | null): string {
+  if (!value) return 'Just now';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Just now';
+  return parsed.toLocaleString();
+}
 
 export default function DuukaTalkApp() {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
@@ -102,7 +149,17 @@ export default function DuukaTalkApp() {
 
   // Screen 1: Record Form State
   const [isRecording, setIsRecording] = useState<boolean>(false);
-const [formData, setFormData] = useState<{ customer: string; item: string; amount: string; paymentType: Transaction['type'] }>({ customer: '', item: '', amount: '', paymentType: 'cash' });
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [micError, setMicError] = useState<string>('');
+  const [transcript, setTranscript] = useState<string>('');
+  const [formData, setFormData] = useState<{ customer: string; item: string; amount: string; paymentType: Transaction['type'] }>({ customer: '', item: '', amount: '', paymentType: 'cash' });
+
+  // Voice recording refs. Refs (not state) are used for the MediaRecorder instance and the
+  // in-progress audio chunks because `onstop` fires with a closure over these values and React
+  // state updates are asynchronous — reading state inside `onstop` could see stale/empty data.
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const activeStreamRef = useRef<MediaStream | null>(null);
 
   // Screen 2: Ledgers State
   const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly'>('daily');
@@ -140,7 +197,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
           return {
             id: transaction.id || transaction.transaction_id || `api-${index}`,
             customer,
-            initials: customer.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+            initials: deriveInitials(customer),
             item: itemParts.join(' ') || 'Recorded transaction',
             amount: transaction.total_amount || 0,
             type: (transaction.payment_type || transaction.type || 'cash') === 'credit' ? 'credit' : 'cash',
@@ -154,7 +211,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
         setDebts(creditData.customers.map((customer, index) => ({
           id: `credit-${index}-${customer.customerName || 'customer'}`,
           customer: customer.customerName || 'Unknown customer',
-          initials: (customer.customerName || 'UC').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+          initials: deriveInitials(customer.customerName || 'UC'),
           item: 'Outstanding balance',
           amount: customer.amountOwed || 0,
           dueDate: customer.dueDates?.[0] ? `Due ${new Date(customer.dueDates[0]).toLocaleDateString()}` : 'No due date',
@@ -165,6 +222,13 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
     };
 
     void loadApiData();
+  }, []);
+
+  // Make sure we never leave the microphone "on" if the component unmounts mid-recording.
+  useEffect(() => {
+    return () => {
+      activeStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
   }, []);
 
   const filteredTransactions = transactions.filter((transaction) => {
@@ -188,7 +252,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
     const newTransaction: Transaction = {
       id: crypto.randomUUID(),
       customer: customerName,
-      initials: customerName.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+      initials: deriveInitials(customerName),
       item: formData.item.trim(),
       amount,
       type: formData.paymentType as Transaction['type'],
@@ -222,6 +286,192 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
     URL.revokeObjectURL(downloadUrl);
   };
 
+  // --- VOICE RECORDING ---
+
+  const stopMicrophoneTracks = () => {
+    activeStreamRef.current?.getTracks().forEach((track) => track.stop());
+    activeStreamRef.current = null;
+  };
+
+  const uploadRecording = async (audioBlob: Blob) => {
+    setIsProcessing(true);
+    setMicError('');
+    try {
+      const formData = new FormData();
+      // Field name and filename must match what the backend expects.
+      formData.append('audio', audioBlob, 'recording.webm');
+
+      // NOTE: do not set a Content-Type header here — the browser needs to add the
+      // multipart/form-data boundary itself.
+      const response = await fetch('/api/voice-to-json', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null) as { error?: string } | null;
+        setMicError(errorData?.error || text('The voice service did not respond. Please try again.', 'Sevesi y’okuwandiika teziddemu. Ddamu ogezeeko.'));
+        return;
+      }
+
+      let data: VoiceToJsonResponse;
+      try {
+        data = await response.json() as VoiceToJsonResponse;
+      } catch {
+        setMicError(text('Received an unexpected response. Please try again.', 'Twafunye eky’okuddamu ekitategeerekeka. Ddamu ogezeeko.'));
+        return;
+      }
+
+      if (!data || !data.success || !data.transaction) {
+        setMicError(data?.error || text('Could not understand the recording. Please try again.', 'Tetusobodde kutegeera ky’owogedde. Ddamu ogezeeko.'));
+        return;
+      }
+
+      const voiceTx = data.transaction;
+
+      const customerName = voiceTx.customerName?.trim() || 'Unknown customer';
+      const quantity = typeof voiceTx.quantity === 'number' && !Number.isNaN(voiceTx.quantity) ? voiceTx.quantity : null;
+      const unitPrice = typeof voiceTx.unitPrice === 'number' && !Number.isNaN(voiceTx.unitPrice) ? voiceTx.unitPrice : null;
+      const amount = quantity !== null && unitPrice !== null ? quantity * unitPrice : 0;
+
+      const itemParts = [quantity, voiceTx.unit, voiceTx.item]
+        .filter((part): part is string | number => part !== null && part !== undefined && part !== '');
+      const itemLabel = itemParts.length > 0
+        ? itemParts.join(' ')
+        : text('Recorded item', 'Ekintu ekiwandiikiddwa');
+
+      const paymentType: Transaction['type'] = voiceTx.paymentType === 'credit' ? 'credit' : 'cash';
+      const dueDateLabel = safeFormatDate(voiceTx.dueDate);
+
+      const newTransaction: Transaction = {
+        id: crypto.randomUUID(),
+        customer: customerName,
+        initials: deriveInitials(customerName),
+        item: itemLabel,
+        amount,
+        type: paymentType,
+        dueDate: paymentType === 'credit' ? (dueDateLabel ? `Due ${dueDateLabel}` : 'Due soon') : (dueDateLabel ? `Due ${dueDateLabel}` : undefined),
+        date: safeFormatDateTime(voiceTx.timestamp),
+      };
+
+      setTranscript(data.transcript || '');
+      setTransactions((currentTransactions) => [newTransaction, ...currentTransactions]);
+      if (newTransaction.type === 'credit') {
+        setDebts((currentDebts) => [
+          {
+            id: newTransaction.id,
+            customer: newTransaction.customer,
+            initials: newTransaction.initials,
+            item: newTransaction.item,
+            amount: newTransaction.amount,
+            dueDate: newTransaction.dueDate || 'Due soon',
+          },
+          ...currentDebts,
+        ]);
+      }
+
+      setFormMessage(text('Entry saved from your voice recording.', 'Ekiwandiiko kiteekeddwa okuva mu ky’owogedde.'));
+      setActiveTab('ledgers');
+    } catch {
+      setMicError(text('Something went wrong uploading your recording. Please check your connection and try again.', 'Wabaddewo ekizibu nga tuwaayo ky’owogedde. Kebera network yo oyongere ogezeeko.'));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const startRecording = async () => {
+    setMicError('');
+    setTranscript('');
+
+    if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setMicError(text('Microphone access is not supported in this browser.', 'Ekyuma kino tekiyinza kukozesa mikirofoni.'));
+      return;
+    }
+    if (typeof MediaRecorder === 'undefined') {
+      setMicError(text('Voice recording is not supported in this browser.', 'Okuwandiika mu ddoboozi tekukoleddwa ku ekyuma kino.'));
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      activeStreamRef.current = stream;
+
+      const preferredMimeType = 'audio/webm';
+      const recorder = MediaRecorder.isTypeSupported(preferredMimeType)
+        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+        : new MediaRecorder(stream);
+
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        stopMicrophoneTracks();
+        const mimeType = recorder.mimeType || preferredMimeType;
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        audioChunksRef.current = [];
+        void uploadRecording(audioBlob);
+      };
+
+      recorder.onerror = () => {
+        stopMicrophoneTracks();
+        setIsRecording(false);
+        setMicError(text('Recording failed. Please try again.', 'Okuwandiika kugaanye. Ddamu ogezeeko.'));
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+    } catch {
+      stopMicrophoneTracks();
+      setMicError(text('Microphone access was denied or unavailable.', 'Tetuyinzizza kukozesa mikirofoni.'));
+    }
+  };
+
+  const stopRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    } else {
+      // No active recorder to stop from — make sure any stray tracks are released.
+      stopMicrophoneTracks();
+    }
+    setIsRecording(false);
+  };
+
+  const handleMicClick = () => {
+    if (isProcessing) return;
+    if (isRecording) {
+      stopRecording();
+    } else {
+      void startRecording();
+    }
+  };
+
+  const micStatusText = isProcessing
+    ? text('Processing...', 'Nkola...')
+    : isRecording
+      ? text('Listening...', 'Mpuliriza...')
+      : text('Tap to Speak', 'Nyiga Owogerere');
+
+  const micAriaLabel = isProcessing
+    ? text('Processing recording', 'Nkola ku ky’owogedde')
+    : isRecording
+      ? text('Stop recording', 'Koma okuwandiika')
+      : text('Start recording', 'Tandika okuwandiika');
+
+  const micStatusMessage = isProcessing
+    ? text('Processing your recording…', 'Tukola ku ky’owogedde…')
+    : micError
+      ? micError
+      : transcript
+        ? `${text('Heard', 'Kye mpulidde')}: "${transcript}"`
+        : '';
+
   // --- SUB-COMPONENTS FOR EACH SCREEN ---
 
   // 1. RECORD SCREEN
@@ -248,17 +498,32 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
 
       {/* Voice Record Hero */}
       <div className="bg-blue-900 rounded-2xl p-6 text-center text-white flex flex-col items-center justify-center shadow-inner">
-        <button 
-          onClick={() => setIsRecording(!isRecording)}
+        <button
+          type="button"
+          onClick={handleMicClick}
+          disabled={isProcessing}
+          aria-pressed={isRecording}
+          aria-label={micAriaLabel}
           className={`w-20 h-20 rounded-full flex items-center justify-center transition-all transform active:scale-95 shadow-lg ${
-            isRecording ? 'bg-red-500 ring-8 ring-red-400/30 animate-pulse' : 'bg-white text-blue-900 hover:bg-blue-50'
+            isProcessing
+              ? 'bg-blue-200/60 text-blue-900 cursor-not-allowed'
+              : isRecording
+                ? 'bg-red-500 ring-8 ring-red-400/30 animate-pulse'
+                : 'bg-white text-blue-900 hover:bg-blue-50'
           }`}
         >
-          <Mic size={36} className={isRecording ? 'text-white' : 'text-blue-900'} />
+          {isProcessing ? (
+            <Loader2 size={36} className="text-blue-900 animate-spin" />
+          ) : (
+            <Mic size={36} className={isRecording ? 'text-white' : 'text-blue-900'} />
+          )}
         </button>
-        <h2 className="mt-4 font-bold text-lg">{text('Tap to Speak', 'Nyiga Owogerere')}</h2>
+        <h2 className="mt-4 font-bold text-lg">{micStatusText}</h2>
         <p className="text-xs text-blue-200 mt-1 max-w-xs leading-relaxed">
           {text('Record a sale or debt in English or Luganda', 'Wandiika amagoba oba amabanja mu Lungereza oba Luganda')}
+        </p>
+        <p className="mt-2 min-h-[1rem] text-xs font-medium text-amber-200" role="status">
+          {micStatusMessage}
         </p>
       </div>
 

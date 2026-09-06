@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collection, doc, setDoc } from "firebase/firestore";
 import { getAiProvider } from "@/lib/ai-provider";
-import { VoiceToJsonResponse } from "@/lib/schema";
+import {
+  VoiceToJsonResponse,
+  getMissingRequiredFields,
+  toTransaction,
+} from "@/lib/schema";
 import { db } from "@/lib/firebase";
 import { toFirestoreTransaction } from "@/lib/firestore-transaction";
 
 export const runtime = "nodejs";
 
-const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const TRANSACTIONS_COLLECTION = "transactions"; // confirm exact name with Sanyu
 
 export async function POST(request: NextRequest): Promise<NextResponse<VoiceToJsonResponse>> {
@@ -40,7 +44,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<VoiceToJs
 
   if (audioEntry.size > MAX_FILE_SIZE_BYTES) {
     return NextResponse.json(
-      { success: false, error: "Audio file exceeds maximum allowed size (15MB)" },
+      { success: false, error: "Audio file exceeds maximum allowed size (50MB)" },
       { status: 400 }
     );
   }
@@ -62,9 +66,32 @@ export async function POST(request: NextRequest): Promise<NextResponse<VoiceToJs
     const provider = getAiProvider();
     const result = await provider.processAudio(audioBuffer, mimeType);
 
+    const missingFields = getMissingRequiredFields(result.extracted);
+
+    // Ambiguous or incomplete transcript. This is a legitimate outcome,
+    // not a failure — return 200 so the frontend can prompt the vendor
+    // to clarify instead of showing a generic error.
+    if (missingFields.length > 0) {
+      return NextResponse.json(
+        {
+          success: true,
+          needsClarification: true,
+          transcript: result.transcript,
+          extracted: result.extracted,
+          missingFields,
+        },
+        { status: 200 }
+      );
+    }
+
+    // Timestamp is always generated server-side — never depend on the
+    // model to supply it.
+    const timestamp = new Date().toISOString();
+    const transaction = toTransaction(result.extracted, timestamp);
+
     const docRef = doc(collection(db, TRANSACTIONS_COLLECTION));
     const firestoreTransaction = toFirestoreTransaction(
-      result.transaction,
+      transaction,
       result.transcript,
       docRef.id
     );
@@ -75,7 +102,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<VoiceToJs
       {
         success: true,
         transcript: result.transcript,
-        transaction: result.transaction,
+        transaction,
       },
       { status: 200 }
     );

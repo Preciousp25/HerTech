@@ -1,8 +1,9 @@
-import { Transaction, validateTransaction } from "./schema";
+import { ExtractedFields, validateExtractedFields } from "./schema";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export interface TranscriptionResult {
   transcript: string;
-  transaction: Transaction;
+  extracted: ExtractedFields;
 }
 
 export interface AiProvider {
@@ -24,6 +25,11 @@ const SUNBIRD_CHAT_URL =
 /**
  * Prompt used by Sunflower to extract transaction information
  * from the transcript returned by Sunbird Speech-to-Text.
+ *
+ * Every field is nullable so the model always has a valid JSON shape
+ * to return, even when the transcript is ambiguous, incomplete, or
+ * not a transaction at all. Completeness is checked afterwards by
+ * getMissingRequiredFields() in schema.ts, not by the model.
  */
 const EXTRACTION_PROMPT = `
 You are an assistant helping market vendors record sales and credit transactions.
@@ -34,13 +40,13 @@ The transcript may contain English, Luganda, Swahili, or a mixture of these lang
 Extract the transaction details into EXACTLY this JSON structure:
 
 {
-  "item": string,
-  "quantity": number,
-  "unit": string or null,
-  "unitPrice": number,
-  "customerName": string or null,
-  "paymentType": "cash" or "credit",
-  "dueDate": string or null
+  "item": null,
+  "quantity": null,
+  "unit": null,
+  "unitPrice": null,
+  "customerName": null,
+  "paymentType": null,
+  "dueDate": null
 }
 
 Rules:
@@ -52,11 +58,14 @@ Rules:
    Use null if it was not mentioned.
 4. "unitPrice" is the price for one unit.
 5. "customerName" is the customer's name if mentioned. Otherwise use null.
-6. "paymentType" must be exactly "cash" or "credit".
+6. "paymentType" must be exactly "cash" or "credit" if it can be determined from the transcript.
 7. "dueDate" must be an ISO date such as "2026-09-15" if a credit payment date was mentioned.
 8. If the transaction is cash, "dueDate" must be null.
-9. If a required value cannot be determined from the transcript, do not invent it.
-10. Return ONLY valid JSON.
+9. If a value cannot be determined from the transcript, set it to null. Do not invent it.
+10. Your entire response must ALWAYS be exactly one JSON object matching this structure —
+    even if the transcript is unclear, incomplete, unrelated to a transaction, or contains
+    no usable information at all. In that case, set every field to null. NEVER respond with
+    a sentence, apology, or explanation instead of JSON, under any circumstances.
 11. Do not use Markdown code fences.
 12. Do not add explanations before or after the JSON.
 
@@ -71,6 +80,18 @@ Example:
   "paymentType": "credit",
   "dueDate": "2026-09-15"
 }
+
+Example when information is missing:
+
+{
+  "item": "sugar",
+  "quantity": 2,
+  "unit": "kg",
+  "unitPrice": null,
+  "customerName": null,
+  "paymentType": "credit",
+  "dueDate": "2026-09-11"
+}
 `;
 
 /**
@@ -79,7 +100,9 @@ Example:
  * The process happens in two stages:
  *
  * 1. Sunbird Speech-to-Text converts the audio into text.
- * 2. Sunflower extracts structured transaction information from the transcript.
+ * 2. Sunflower extracts structured transaction fields from the transcript.
+ *    These fields may be incomplete — the caller decides what to do
+ *    with a partial extraction.
  */
 class SunbirdProvider implements AiProvider {
   private apiKey: string;
@@ -97,11 +120,11 @@ class SunbirdProvider implements AiProvider {
       mimeType
     );
 
-    const transaction = await this.extractTransaction(transcript);
+    const extracted = await this.extractTransaction(transcript);
 
     return {
       transcript,
-      transaction,
+      extracted,
     };
   }
 
@@ -129,14 +152,14 @@ class SunbirdProvider implements AiProvider {
     const formData = new FormData();
 
     const arrayBuffer = audioBuffer.buffer.slice(
-  audioBuffer.byteOffset,
-  audioBuffer.byteOffset + audioBuffer.byteLength
-) as ArrayBuffer;
+      audioBuffer.byteOffset,
+      audioBuffer.byteOffset + audioBuffer.byteLength
+    ) as ArrayBuffer;
 
-const audioBlob = new Blob([arrayBuffer], {
-  type: mimeType,
-});
-    
+    const audioBlob = new Blob([arrayBuffer], {
+      type: mimeType,
+    });
+
     formData.append(
       "audio",
       audioBlob,
@@ -186,7 +209,7 @@ const audioBlob = new Blob([arrayBuffer], {
    */
   private async extractTransaction(
     transcript: string
-  ): Promise<Transaction> {
+  ): Promise<ExtractedFields> {
     const response = await fetch(SUNBIRD_CHAT_URL, {
       method: "POST",
       headers: {
@@ -234,7 +257,35 @@ const audioBlob = new Blob([arrayBuffer], {
       );
     }
 
-    return parseTransactionJson(rawContent);
+    try {
+      return parseExtractedFields(rawContent);
+    } catch (error) {
+      if (!process.env.GEMINI_API_KEY) {
+        throw error;
+      }
+
+      console.warn(
+        "Sunflower did not return structured JSON; retrying extraction with Gemini"
+      );
+      return this.extractWithGemini(transcript);
+    }
+  }
+
+  private async extractWithGemini(
+    transcript: string
+  ): Promise<ExtractedFields> {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.0-flash",
+      systemInstruction: `${EXTRACTION_PROMPT}\nToday's date is ${new Date().toISOString().slice(0, 10)}.`,
+      generationConfig: { responseMimeType: "application/json" },
+    });
+
+    const result = await model.generateContent(transcript);
+    const rawContent = result.response.text();
+
+    console.info("Gemini extraction response", { rawContent });
+    return parseExtractedFields(rawContent);
   }
 
   /**
@@ -360,11 +411,13 @@ const audioBlob = new Blob([arrayBuffer], {
 }
 
 /**
- * Parse the JSON returned by Sunflower.
+ * Parse the JSON returned by Sunflower into ExtractedFields.
+ * Throws only for genuinely malformed output (invalid JSON, wrong
+ * field types) — legitimately null fields are not an error here.
  */
-function parseTransactionJson(
+function parseExtractedFields(
   rawContent: string
-): Transaction {
+): ExtractedFields {
   const cleaned = cleanJsonResponse(rawContent);
 
   let parsed: unknown;
@@ -382,14 +435,13 @@ function parseTransactionJson(
     );
   }
 
-  return validateTransaction(parsed);
+  return validateExtractedFields(parsed);
 }
 
 /**
- * Remove Markdown code fences only when they surround
- * the complete response.
- *
- * This is safer than globally replacing every ``` occurrence.
+ * Remove Markdown code fences when they surround the complete response,
+ * and fall back to extracting the first {...} block if the model added
+ * stray text around the JSON despite instructions not to.
  */
 function cleanJsonResponse(
   rawContent: string
@@ -402,6 +454,12 @@ function cleanJsonResponse(
 
   if (fencedMatch) {
     return fencedMatch[1].trim();
+  }
+
+  const braceMatch = trimmed.match(/\{[\s\S]*\}/);
+
+  if (braceMatch) {
+    return braceMatch[0];
   }
 
   return trimmed;
