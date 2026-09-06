@@ -89,6 +89,32 @@ const INITIAL_DEBTS: Debt[] = [
   { id: '2', customer: 'Nakato Grace', initials: 'NG', item: '2kg Super Rice', amount: 10000, dueDate: 'Due Friday' },
 ];
 
+const OFFLINE_QUEUE_KEY = 'duukatalk-offline-queue';
+
+type LedgerPayload = {
+  customer_name: string;
+  item: string;
+  total_amount: number;
+  payment_type: Transaction['type'];
+};
+
+type QueuedEntry = {
+  payload: LedgerPayload;
+  transaction: Transaction;
+};
+
+function readOfflineQueue(): QueuedEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]') as QueuedEntry[];
+  } catch {
+    return [];
+  }
+}
+
+function writeOfflineQueue(queue: QueuedEntry[]) {
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+}
+
 export default function DuukaTalkApp() {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [language, setLanguage] = useState<'EN' | 'LUG' | 'MIX'>('MIX');
@@ -111,7 +137,33 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
   const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [searchQuery, setSearchQuery] = useState('');
 
+  const text = (english: string, luganda: string) => language === 'EN' ? english : language === 'LUG' ? luganda : `${english} · ${luganda}`;
+
   useEffect(() => {
+    navigator.serviceWorker?.register('/sw.js').catch(() => undefined);
+
+    const handleOnline = async () => {
+      const queue = readOfflineQueue();
+      if (!queue.length) return;
+
+      const remaining: QueuedEntry[] = [];
+      for (const entry of queue) {
+        try {
+          const response = await fetch('/api/ledger', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(entry.payload),
+          });
+          if (!response.ok) remaining.push(entry);
+        } catch {
+          remaining.push(entry);
+        }
+      }
+      writeOfflineQueue(remaining);
+      if (remaining.length !== queue.length) setFormMessage('Offline entries synced.');
+    };
+    window.addEventListener('online', handleOnline);
+
     const loadApiData = async () => {
       const responses = await Promise.allSettled([
         fetch('/api/ledger'),
@@ -137,20 +189,23 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
       ]);
 
       if (ledgerData?.transactions) {
-        setTransactions(ledgerData.transactions.map((transaction, index) => {
+        const serverTransactions: Transaction[] = ledgerData.transactions.map((transaction, index) => {
           const customer = transaction.customer_name || 'Unknown customer';
           const itemParts = [transaction.quantity, transaction.unit, transaction.item].filter(Boolean);
+          const paymentType: Transaction['type'] = (transaction.payment_type || transaction.type || 'cash') === 'credit' ? 'credit' : 'cash';
           return {
             id: transaction.id || transaction.transaction_id || `api-${index}`,
             customer,
             initials: customer.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
             item: itemParts.join(' ') || 'Recorded transaction',
             amount: transaction.total_amount || 0,
-            type: (transaction.payment_type || transaction.type || 'cash') === 'credit' ? 'credit' : 'cash',
+            type: paymentType,
             dueDate: transaction.due_date ? `Due ${new Date(transaction.due_date).toLocaleDateString()}` : undefined,
             date: transaction.timestamp ? new Date(transaction.timestamp).toLocaleString() : 'Recently',
           };
-        }));
+        });
+        const queuedTransactions = readOfflineQueue().map((entry) => entry.transaction);
+        setTransactions([...queuedTransactions, ...serverTransactions]);
       }
       if (summaryData) setSummary(summaryData);
       if (creditData?.customers) {
@@ -168,6 +223,10 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
     };
 
     void loadApiData();
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
   }, []);
 
   const filteredTransactions = transactions.filter((transaction) => {
@@ -175,7 +234,6 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
     return !query || [transaction.customer, transaction.item, transaction.type].some((value) => value.toLowerCase().includes(query));
   });
 
-  const text = (english: string, luganda: string) => language === 'EN' ? english : language === 'LUG' ? luganda : `${english} · ${luganda}`;
   const toggleTheme = () => setIsDarkMode(prev => !prev);
 
   const handleVoiceRecording = async () => {
@@ -236,33 +294,37 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
     }
 
     const customerName = formData.customer.trim();
-    const response = await fetch('/api/ledger', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        customer_name: customerName,
-        item: formData.item.trim(),
-        total_amount: amount,
-        payment_type: formData.paymentType,
-      }),
-    });
-
-    if (!response.ok) {
-      setFormMessage(text('Could not save entry. Try again.', 'Ekiwandiiko tekisobose kukuumibwa. Gezako nate.'));
-      return;
-    }
-
-    const savedTransaction = await response.json() as { id: string; timestamp: string };
+    const payload: LedgerPayload = {
+      customer_name: customerName,
+      item: formData.item.trim(),
+      total_amount: amount,
+      payment_type: formData.paymentType,
+    };
+    const localId = crypto.randomUUID();
+    const localTimestamp = new Date().toISOString();
     const newTransaction: Transaction = {
-      id: savedTransaction.id,
+      id: localId,
       customer: customerName,
       initials: customerName.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
       item: formData.item.trim(),
       amount,
       type: formData.paymentType as Transaction['type'],
       dueDate: formData.paymentType === 'credit' ? 'Due soon' : undefined,
-      date: savedTransaction.timestamp ? new Date(savedTransaction.timestamp).toLocaleString() : 'Just now',
+      date: new Date(localTimestamp).toLocaleString(),
     };
+
+    try {
+      const response = await fetch('/api/ledger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error('Save failed');
+    } catch {
+      const queue = readOfflineQueue();
+      writeOfflineQueue([...queue, { payload, transaction: newTransaction }]);
+      setFormMessage(text('Saved offline. It will sync when you reconnect.', 'Kuumiddwa awatali mutimbagano. Kijja kuterekebwa nga okomyewo ku mutimbagano.'));
+    }
 
     setTransactions((currentTransactions) => [newTransaction, ...currentTransactions]);
     if (newTransaction.type === 'credit') {
@@ -272,7 +334,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
       ]);
     }
     setFormData({ customer: '', item: '', amount: '', paymentType: 'cash' });
-    setFormMessage(text('Entry saved to your ledger.', 'Ekiwandiiko kiteekeddwa mu bitabo byo.'));
+    if (navigator.onLine) setFormMessage(text('Entry saved to your ledger.', 'Ekiwandiiko kiteekeddwa mu bitabo byo.'));
     setActiveTab('ledgers');
   };
 
