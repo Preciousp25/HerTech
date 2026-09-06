@@ -1,7 +1,8 @@
-import { collection, getDocs } from "firebase/firestore";
+import { collection, doc, getDocs, runTransaction } from "firebase/firestore";
 import { db } from "./firebase";
 
 const TRANSACTION_ID_PATTERN = /^txn_(\d+)$/;
+const COUNTER_PATH = ["metadata", "transaction_counter"] as const;
 
 export async function getNextTransactionId(): Promise<string> {
   const snapshot = await getDocs(collection(db, "transactions"));
@@ -18,5 +19,15 @@ export async function getNextTransactionId(): Promise<string> {
     }
   }
 
-  return `txn_${String(highestNumber + 1).padStart(3, "0")}`;
+  const counterRef = doc(db, ...COUNTER_PATH);
+  const nextNumber = await runTransaction(db, async (transaction) => {
+    const counterSnapshot = await transaction.get(counterRef);
+    const storedNumber = Number(counterSnapshot.data()?.lastNumber) || 0;
+    const next = Math.max(storedNumber, highestNumber) + 1;
+
+    transaction.set(counterRef, { lastNumber: next }, { merge: true });
+    return next;
+  });
+
+  return `txn_${String(nextNumber).padStart(3, "0")}`;
 }

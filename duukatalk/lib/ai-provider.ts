@@ -28,63 +28,6 @@ Then extract the transaction details into this exact JSON shape, with no extra c
 
 Respond ONLY with a JSON object with two top-level fields: "transcript" (the raw transcription) and "transaction" (the object above). No other text.`;
 
-class OpenAiProvider implements AiProvider {
-  private apiKey: string;
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
-
-  async processAudio(audioBuffer: Buffer, mimeType: string): Promise<TranscriptionResult> {
-    const base64Audio = audioBuffer.toString("base64");
-    const format = mimeType.includes("wav") ? "wav" : mimeType.includes("mpeg") || mimeType.includes("mp3") ? "mp3" : null;
-
-    if (!format) {
-      throw new Error(
-        `OpenAI audio input does not support ${mimeType || "this recording format"}. Set AI_PROVIDER=gemini for browser WebM recordings.`,
-      );
-    }
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-audio-preview",
-        modalities: ["text"],
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: EXTRACTION_PROMPT },
-              {
-                type: "input_audio",
-                input_audio: { data: base64Audio, format },
-              },
-            ],
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} ${errText}`);
-    }
-
-    const data = await response.json();
-    const rawContent: unknown = data?.choices?.[0]?.message?.content;
-
-    if (typeof rawContent !== "string") {
-      throw new Error("Unexpected OpenAI response shape");
-    }
-
-    return parseModelJson(rawContent);
-  }
-}
-
 class GeminiProvider implements AiProvider {
   private apiKey: string;
 
@@ -156,19 +99,7 @@ function parseModelJson(rawContent: string): TranscriptionResult {
 }
 
 export function getAiProvider(): AiProvider {
-  const providerName = process.env.AI_PROVIDER?.toLowerCase() ?? "openai";
-
-  if (providerName === "openai") {
-    const key = process.env.OPENAI_API_KEY;
-    if (!key) throw new Error("OPENAI_API_KEY is not set");
-    return new OpenAiProvider(key);
-  }
-
-  if (providerName === "gemini") {
-    const key = process.env.GOOGLE_API_KEY;
-    if (!key) throw new Error("GOOGLE_API_KEY is not set");
-    return new GeminiProvider(key);
-  }
-
-  throw new Error(`Unknown AI_PROVIDER: ${providerName}`);
+  const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY is not set");
+  return new GeminiProvider(key);
 }

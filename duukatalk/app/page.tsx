@@ -128,6 +128,7 @@ export default function DuukaTalkApp() {
   const [voiceMessage, setVoiceMessage] = useState('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const voiceSubmitInProgressRef = useRef(false);
 
   // Screen 1: Record Form State
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -261,6 +262,9 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
         setIsRecording(false);
         setVoiceMessage(text('Processing recording...', 'Tukola ku ddoboozi...'));
 
+        if (voiceSubmitInProgressRef.current) return;
+        voiceSubmitInProgressRef.current = true;
+
         const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         const formData = new FormData();
         formData.append('audio', audioBlob, 'sale.webm');
@@ -273,6 +277,8 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
           window.location.reload();
         } catch (error) {
           setVoiceMessage(error instanceof Error ? error.message : text('Voice processing failed.', 'Okukola ku ddoboozi kulemedde.'));
+        } finally {
+          voiceSubmitInProgressRef.current = false;
         }
       });
 
