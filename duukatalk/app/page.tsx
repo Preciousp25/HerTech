@@ -22,7 +22,8 @@ import {
   TrendingUp,
   Phone,
   Plus,
-  Loader2
+  Loader2,
+  X
 } from 'lucide-react';
 
 // --- TYPES & MOCK DATA ---
@@ -73,10 +74,21 @@ interface ApiCreditCustomer {
   dueDates?: string[];
 }
 
+type RiskFlagType = 'credit_risk' | 'stock_movement' | 'due_date' | 'cash_vs_credit';
+
 interface ApiRiskFlag {
-  type: 'credit_risk' | 'stock_movement';
+  id?: string;
+  type: RiskFlagType;
+  severity?: 'warning' | 'critical';
   message: string;
 }
+
+const RISK_POPUP_TITLE: Record<RiskFlagType, string> = {
+  credit_risk: 'Credit risk',
+  stock_movement: 'Stock alert',
+  due_date: 'Payment due',
+  cash_vs_credit: 'Cash vs credit',
+};
 
 // Shape returned by POST /api/voice-to-json on success
 interface VoiceTransaction {
@@ -136,6 +148,56 @@ function safeFormatDateTime(value?: string | null): string {
   return parsed.toLocaleString();
 }
 
+const CREDIT_LIMIT = 15000;
+
+function buildRiskFlagsFromTransactions(transactions: Transaction[]): ApiRiskFlag[] {
+  const flags: ApiRiskFlag[] = [];
+  const creditTotals: Record<string, number> = {};
+  let totalCash = 0;
+  let totalCredit = 0;
+
+  for (const txn of transactions) {
+    if (txn.type === 'credit') {
+      creditTotals[txn.customer] = (creditTotals[txn.customer] || 0) + txn.amount;
+      totalCredit += txn.amount;
+    } else {
+      totalCash += txn.amount;
+    }
+  }
+
+  for (const [name, total] of Object.entries(creditTotals)) {
+    if (total > CREDIT_LIMIT) {
+      flags.push({
+        id: `credit_${name}`,
+        type: 'credit_risk',
+        severity: total > CREDIT_LIMIT * 1.5 ? 'critical' : 'warning',
+        message: `${name} now owes UGX ${total.toLocaleString()}, over the ${CREDIT_LIMIT.toLocaleString()} limit`,
+      });
+    }
+  }
+
+  for (const txn of transactions) {
+    if (txn.type !== 'credit' || !txn.dueDate) continue;
+    flags.push({
+      id: `due_${txn.id}`,
+      type: 'due_date',
+      severity: 'warning',
+      message: `${txn.customer}'s payment for ${txn.item} is ${txn.dueDate.toLowerCase()}`,
+    });
+  }
+
+  if (totalCredit > totalCash) {
+    flags.push({
+      id: 'shop_cash_vs_credit',
+      type: 'cash_vs_credit',
+      severity: 'critical',
+      message: `Outstanding credit (UGX ${totalCredit.toLocaleString()}) exceeds cash at hand (UGX ${totalCash.toLocaleString()})`,
+    });
+  }
+
+  return flags;
+}
+
 export default function DuukaTalkApp() {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [language, setLanguage] = useState<'EN' | 'LUG' | 'MIX'>('MIX');
@@ -145,6 +207,7 @@ export default function DuukaTalkApp() {
   const [formMessage, setFormMessage] = useState('');
   const [summary, setSummary] = useState<ApiSummary | null>(null);
   const [riskFlags, setRiskFlags] = useState<ApiRiskFlag[]>([]);
+  const [dismissedRiskIds, setDismissedRiskIds] = useState<string[]>([]);
   const [apiError, setApiError] = useState('');
 
   // Screen 1: Record Form State
@@ -190,7 +253,7 @@ export default function DuukaTalkApp() {
         readJson<{ flags?: ApiRiskFlag[] }>(responses[3]),
       ]);
 
-      if (ledgerData?.transactions) {
+      if (ledgerData?.transactions?.length) {
         setTransactions(ledgerData.transactions.map((transaction, index) => {
           const customer = transaction.customer_name || 'Unknown customer';
           const itemParts = [transaction.quantity, transaction.unit, transaction.item].filter(Boolean);
@@ -207,7 +270,7 @@ export default function DuukaTalkApp() {
         }));
       }
       if (summaryData) setSummary(summaryData);
-      if (creditData?.customers) {
+      if (creditData?.customers?.length) {
         setDebts(creditData.customers.map((customer, index) => ({
           id: `credit-${index}-${customer.customerName || 'customer'}`,
           customer: customer.customerName || 'Unknown customer',
@@ -217,7 +280,10 @@ export default function DuukaTalkApp() {
           dueDate: customer.dueDates?.[0] ? `Due ${new Date(customer.dueDates[0]).toLocaleDateString()}` : 'No due date',
         })));
       }
-      if (riskData?.flags) setRiskFlags(riskData.flags);
+      if (riskData?.flags?.length) {
+        setRiskFlags(riskData.flags);
+        setDismissedRiskIds([]);
+      }
       if (failedRoutes > 0) setApiError('Live data is unavailable for some screens. Showing local data.');
     };
 
@@ -237,6 +303,18 @@ export default function DuukaTalkApp() {
   });
 
   const text = (english: string, luganda: string) => language === 'EN' ? english : language === 'LUG' ? luganda : `${english} · ${luganda}`;
+
+  const riskFlagKey = (flag: ApiRiskFlag, index: number) => flag.id || `${flag.type}-${index}`;
+
+  const displayRiskFlags = riskFlags.length > 0 ? riskFlags : buildRiskFlagsFromTransactions(transactions);
+
+  const visibleRiskFlags = displayRiskFlags
+    .map((flag, index) => ({ flag, index }))
+    .filter(({ flag, index }) => !dismissedRiskIds.includes(riskFlagKey(flag, index)));
+
+  const dismissRiskFlag = (flagId: string) => {
+    setDismissedRiskIds((current) => (current.includes(flagId) ? current : [...current, flagId]));
+  };
   const toggleTheme = () => setIsDarkMode(prev => !prev);
 
   const handleSaveEntry = (event: React.FormEvent<HTMLFormElement>) => {
@@ -902,16 +980,69 @@ export default function DuukaTalkApp() {
 
         {/* Dynamic View Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {riskFlags.length > 0 && <div className="space-y-2" role="alert">
-            {riskFlags.map((flag, index) => <div key={`${flag.type}-${index}`} className={`rounded-lg px-3 py-2 text-xs font-medium ${flag.type === 'credit_risk' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800'}`}>
-              {flag.message}
-            </div>)}
-          </div>}
           {activeTab === 'record' && renderRecordScreen()}
           {activeTab === 'ledgers' && renderLedgersScreen()}
           {activeTab === 'debts' && renderDebtsScreen()}
           {activeTab === 'reports' && renderReportsScreen()}
         </div>
+
+        {visibleRiskFlags.length > 0 && (
+          <div className="absolute inset-0 z-40 flex flex-col justify-start pt-20 px-3 pb-20 pointer-events-none">
+            <div
+              className="pointer-events-auto max-h-full overflow-y-auto space-y-2"
+              role="region"
+              aria-label="System alerts"
+            >
+              {visibleRiskFlags.map(({ flag, index }) => {
+                const flagId = riskFlagKey(flag, index);
+                const isCritical = flag.severity === 'critical' || flag.type === 'credit_risk' || flag.type === 'cash_vs_credit';
+                const title = RISK_POPUP_TITLE[flag.type] || 'Alert';
+                return (
+                  <div
+                    key={flagId}
+                    role="alert"
+                    className={`rounded-xl border shadow-lg px-3 py-3 ${
+                      isCritical
+                        ? 'bg-red-50 border-red-200 text-red-900'
+                        : 'bg-amber-50 border-amber-200 text-amber-950'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <AlertCircle
+                        size={18}
+                        className={`mt-0.5 shrink-0 ${isCritical ? 'text-red-600' : 'text-amber-600'}`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold uppercase tracking-wide">
+                          {title}
+                          {flag.severity ? ` · ${flag.severity}` : ''}
+                        </p>
+                        <p className="text-sm font-medium leading-snug mt-0.5">{flag.message}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => dismissRiskFlag(flagId)}
+                        className={`shrink-0 rounded-md p-1 ${isCritical ? 'hover:bg-red-100' : 'hover:bg-amber-100'}`}
+                        aria-label="Dismiss alert"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {visibleRiskFlags.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setDismissedRiskIds(displayRiskFlags.map((flag, index) => riskFlagKey(flag, index)))}
+                  className="w-full rounded-lg bg-slate-900/80 text-white text-xs font-semibold py-2"
+                >
+                  Dismiss all
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Bottom Navigation */}
         <nav className={`border-t flex justify-around py-2 px-1 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
