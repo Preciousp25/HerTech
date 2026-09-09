@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Mic, 
   Moon, 
@@ -21,7 +22,8 @@ import {
   AlertCircle,
   TrendingUp,
   Phone,
-  Plus
+  Plus,
+  LogOut
 } from 'lucide-react';
 
 // --- TYPES & MOCK DATA ---
@@ -90,6 +92,7 @@ const INITIAL_DEBTS: Debt[] = [
 ];
 
 export default function DuukaTalkApp() {
+  const router = useRouter();
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [language, setLanguage] = useState<'EN' | 'LUG' | 'MIX'>('MIX');
   const [activeTab, setActiveTab] = useState<TabType>('record');
@@ -631,6 +634,14 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
               aria-label="Toggle theme"
             >
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button
+              onClick={() => router.push('/login')}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-blue-200 transition hover:bg-blue-800/80 hover:text-white"
+              aria-label="Log out"
+            >
+              <LogOut size={16} />
+              <span className="hidden sm:inline">Log out</span>
             </button>
           </div>
         </header>
