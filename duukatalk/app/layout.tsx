@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DuuKaTalk",
-  description: "A side-panel messaging dashboard",
+  title: "DuukaTalk",
+  description: "Simple books and stronger business for local shop owners.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

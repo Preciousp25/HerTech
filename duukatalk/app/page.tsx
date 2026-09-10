@@ -1,18 +1,19 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  Mic,
-  Moon,
-  Sun,
-  Store,
-  User,
-  Package,
-  DollarSign,
-  CheckCircle,
-  BookOpen,
-  CreditCard,
-  BarChart3,
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { 
+  Mic, 
+  Moon, 
+  Sun, 
+  Store, 
+  User, 
+  Package, 
+  DollarSign, 
+  CheckCircle, 
+  BookOpen, 
+  CreditCard, 
+  BarChart3, 
   Edit3,
   Search,
   ChevronLeft,
@@ -22,7 +23,7 @@ import {
   TrendingUp,
   Phone,
   Plus,
-  Loader2
+  LogOut
 } from 'lucide-react';
 
 // --- TYPES & MOCK DATA ---
@@ -137,6 +138,7 @@ function safeFormatDateTime(value?: string | null): string {
 }
 
 export default function DuukaTalkApp() {
+  const router = useRouter();
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [language, setLanguage] = useState<'EN' | 'LUG' | 'MIX'>('MIX');
   const [activeTab, setActiveTab] = useState<TabType>('record');
@@ -896,6 +898,14 @@ export default function DuukaTalkApp() {
               aria-label="Toggle theme"
             >
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button
+              onClick={() => router.push('/login')}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-blue-200 transition hover:bg-blue-800/80 hover:text-white"
+              aria-label="Log out"
+            >
+              <LogOut size={16} />
+              <span className="hidden sm:inline">Log out</span>
             </button>
           </div>
         </header>
