@@ -332,6 +332,7 @@ export default function DuukaTalkApp() {
   useEffect(() => { void loadApiData(); }, [loadApiData]);
 
   useEffect(() => {
+    navigator.serviceWorker?.register('/sw.js').catch(() => undefined);
     const updateOnline = () => setIsOnline(navigator.onLine);
     updateOnline();
     window.addEventListener('online', updateOnline);
@@ -428,7 +429,8 @@ export default function DuukaTalkApp() {
         body: JSON.stringify({ customer: customerName, item: newTransaction.item, amount, paymentType: newTransaction.type }),
       });
       if (!response.ok) {
-        setFormMessage(text('Could not save to the live ledger. Check your connection.', 'Ekitabo tekisobodde kuteekebwako. Kebera network yo.'));
+        const result = await response.json().catch(() => null) as { error?: string } | null;
+        setFormMessage(result?.error || text('Could not save to the live ledger. Check your connection.', 'Ekitabo tekisobodde kuteekebwako. Kebera network yo.'));
         return;
       }
     } catch {

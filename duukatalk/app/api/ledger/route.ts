@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { collection, doc, getDocs, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { toFirestoreTransaction } from "@/lib/firestore-transaction";
 import { notifyAfterTransaction } from "@/lib/notify-transaction";
 import { updateCustomerCredit } from "@/lib/updateCustomerCredit";
+import { getNextTransactionId } from "@/lib/transaction-id";
 
 export async function GET() {
   try {
@@ -23,31 +24,37 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
       customer?: string;
+      customer_name?: string;
       item?: string;
       amount?: number;
+      total_amount?: number;
       paymentType?: "cash" | "credit";
+      payment_type?: "cash" | "credit";
       dueDate?: string | null;
       phone?: string | null;
     };
 
-    const customer = body.customer?.trim();
+    const customer = (body.customer ?? body.customer_name)?.trim();
     const item = body.item?.trim();
-    const amount = Number(body.amount);
-    const paymentType = body.paymentType === "credit" ? "credit" : "cash";
+    const amount = Number(body.amount ?? body.total_amount);
+    const paymentType =
+      (body.paymentType ?? body.payment_type) === "credit" ? "credit" : "cash";
 
-    if (!customer || !item || !amount) {
+    if (!customer || !item || !Number.isFinite(amount) || amount <= 0) {
       return NextResponse.json(
-        { error: "customer, item, and amount are required" },
-        { status: 400 },
+        { error: "customer, item, and a positive amount are required" },
+        { status: 400 }
       );
     }
 
+    const transactionId = await getNextTransactionId();
     const timestamp = new Date().toISOString();
-    const docRef = doc(collection(db, "transactions"));
+    const transactionRef = doc(db, "transactions", transactionId);
+
     const firestoreTransaction = toFirestoreTransaction(
       {
         item,
@@ -60,10 +67,10 @@ export async function POST(request: Request) {
         timestamp,
       },
       "manual entry",
-      docRef.id,
+      transactionId
     );
 
-    await setDoc(docRef, firestoreTransaction);
+    await setDoc(transactionRef, firestoreTransaction);
 
     let outstandingCredit: number | undefined;
     if (paymentType === "credit") {
@@ -81,15 +88,15 @@ export async function POST(request: Request) {
       customerPhone: body.phone,
     });
 
-    return NextResponse.json({
-      transaction: firestoreTransaction,
-      sms,
-    });
+    return NextResponse.json(
+      { id: transactionId, transaction: firestoreTransaction, sms },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Error recording ledger entry:", error);
     return NextResponse.json(
       { error: "Failed to record transaction" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
