@@ -180,7 +180,7 @@ export default function LoginPage() {
         ownerName: data.ownerName,
       });
 
-      router.push('/');
+      router.push('/dashboard');
     } catch {
       setError(
         text(
