@@ -18,17 +18,16 @@ export interface FirestoreTransaction {
   confidence_flag: boolean;
 }
 
-const DEMO_VENDOR_ID = "vendor_001";
-
 export function toFirestoreTransaction(
   transaction: Transaction,
   transcript: string,
-  id: string
+  id: string,
+  vendorId: string
 ): FirestoreTransaction {
   return {
     id,
     transaction_id: id,
-    vendor_id: DEMO_VENDOR_ID,
+    vendor_id: vendorId,
     type: transaction.paymentType,
     item: transaction.item,
     quantity: transaction.quantity,
@@ -40,6 +39,8 @@ export function toFirestoreTransaction(
     due_date: transaction.dueDate,
     timestamp: transaction.timestamp,
     raw_transcript: transcript,
-    confidence_flag: transaction.customerName === null || transaction.item.trim() === "",
+    confidence_flag:
+      transaction.customerName === null ||
+      transaction.item.trim() === "",
   };
 }
