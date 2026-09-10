@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { isOutstandingCredit } from "@/lib/credit";
 
 export async function GET() {
 	try {
@@ -14,11 +15,11 @@ export async function GET() {
 		for (const txn of transactions) {
 			const amount = Number(txn.total_amount) || 0;
 
-			if (txn.payment_type === "cash") {
+			if (txn.payment_type === "cash" || txn.settled === true) {
 				totalSales += amount;
 			}
 
-			if (txn.payment_type === "credit") {
+			if (isOutstandingCredit(txn)) {
 				totalCreditOutstanding += amount;
 
 				const name = txn.customer_name || "Unknown";

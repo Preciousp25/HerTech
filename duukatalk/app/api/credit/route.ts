@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { isOutstandingCredit } from "@/lib/credit";
+import { settleCustomerCredit } from "@/lib/updateCustomerCredit";
 
 export async function GET() {
 	try {
@@ -10,7 +12,7 @@ export async function GET() {
 		const balances: Record<string, { owed: number; dueDates: string[] }> = {};
 
 		for (const txn of transactions) {
-			if (txn.payment_type?.toLowerCase() !== "credit") continue;
+			if (!isOutstandingCredit(txn)) continue;
 
 			const name = txn.customer_name || "Unknown";
 			const amount = Number(txn.total_amount) || 0;
@@ -32,11 +34,37 @@ export async function GET() {
 			dueDates: data.dueDates,
 		}));
 
-		return NextResponse.json(customers);
+		return NextResponse.json({ customers });
 	} catch (error) {
 		console.error("Failed to fetch credit balances:", error);
 		return NextResponse.json(
 			{ error: "Failed to fetch credit balances" },
+			{ status: 500 },
+		);
+	}
+}
+
+export async function POST(request: Request) {
+	try {
+		const body = (await request.json()) as { customerName?: string };
+		const customerName = body.customerName?.trim();
+
+		if (!customerName) {
+			return NextResponse.json(
+				{ error: "customerName is required" },
+				{ status: 400 },
+			);
+		}
+
+		const result = await settleCustomerCredit(customerName);
+		return NextResponse.json({
+			customerName,
+			...result,
+		});
+	} catch (error) {
+		console.error("Failed to settle customer credit:", error);
+		return NextResponse.json(
+			{ error: "Failed to record payment" },
 			{ status: 500 },
 		);
 	}

@@ -8,6 +8,8 @@ import {
 } from "@/lib/schema";
 import { db } from "@/lib/firebase";
 import { toFirestoreTransaction } from "@/lib/firestore-transaction";
+import { updateCustomerCredit } from "@/lib/updateCustomerCredit";
+import { notifyAfterTransaction } from "@/lib/notify-transaction";
 
 export const runtime = "nodejs";
 
@@ -98,11 +100,27 @@ export async function POST(request: NextRequest): Promise<NextResponse<VoiceToJs
 
     await setDoc(docRef, firestoreTransaction);
 
+    let outstandingCredit: number | undefined;
+    if (transaction.paymentType === "credit" && transaction.customerName) {
+      outstandingCredit = (await updateCustomerCredit(transaction.customerName)) ?? undefined;
+    }
+
+    const sms = await notifyAfterTransaction({
+      customerName: transaction.customerName,
+      paymentType: transaction.paymentType,
+      item: transaction.item,
+      amount: firestoreTransaction.total_amount,
+      quantity: transaction.quantity,
+      dueDate: transaction.dueDate,
+      outstandingCredit,
+    });
+
     return NextResponse.json(
       {
         success: true,
         transcript: result.transcript,
         transaction,
+        sms,
       },
       { status: 200 }
     );

@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-
-const CREDIT_LIMIT = 15000;
-const LARGE_QUANTITY_THRESHOLD = 20;
+import { isOutstandingCredit, CREDIT_LIMIT, LARGE_QUANTITY_THRESHOLD } from "@/lib/credit";
 
 type Transaction = {
   transaction_id?: string;
@@ -14,6 +12,7 @@ type Transaction = {
   item?: string;
   due_date?: string;
   timestamp?: string;
+  settled?: boolean;
 };
 
 type Flag = {
@@ -35,7 +34,7 @@ export async function GET() {
     // Rule 1: customer over credit limit (a new loan pushing them over)
     const creditTotals: Record<string, number> = {};
     for (const txn of transactions) {
-      if ((txn.payment_type || "").toLowerCase() === "credit") {
+      if (isOutstandingCredit(txn)) {
         const name = txn.customer_name || "Unknown";
         const amount = Number(txn.total_amount) || 0;
         creditTotals[name] = (creditTotals[name] || 0) + amount;
@@ -69,14 +68,15 @@ export async function GET() {
 
     // Rule 3: due date has arrived or passed, still on credit
     for (const txn of transactions) {
-      if ((txn.payment_type || "").toLowerCase() !== "credit") continue;
+      if (!isOutstandingCredit(txn)) continue;
       if (!txn.due_date || txn.due_date === "N/A") continue;
 
-      if (txn.due_date <= today) {
+      const dueDay = txn.due_date.slice(0, 10);
+      if (dueDay <= today) {
         flags.push({
           id: `due_${txn.transaction_id}`,
           type: "due_date",
-          severity: txn.due_date < today ? "critical" : "warning",
+          severity: dueDay < today ? "critical" : "warning",
           message: `${txn.customer_name}'s payment for ${txn.item} was due ${txn.due_date}`,
           details: {
             customerName: txn.customer_name,
@@ -93,8 +93,10 @@ export async function GET() {
     let totalCredit = 0;
     for (const txn of transactions) {
       const amount = Number(txn.total_amount) || 0;
-      if ((txn.payment_type || "").toLowerCase() === "cash") totalCash += amount;
-      if ((txn.payment_type || "").toLowerCase() === "credit") totalCredit += amount;
+      if ((txn.payment_type || "").toLowerCase() === "cash" || txn.settled === true) {
+        totalCash += amount;
+      }
+      if (isOutstandingCredit(txn)) totalCredit += amount;
     }
     if (totalCredit > totalCash) {
       flags.push({
