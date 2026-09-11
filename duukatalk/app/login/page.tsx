@@ -12,8 +12,10 @@ import {
   Store,
 } from 'lucide-react';
 
+const LANGUAGE_KEY = 'duukaTalkLanguage';
+
 type AuthMode = 'signup' | 'login';
-type Language = 'EN' | 'LUG' | 'MIX';
+type Language = 'EN' | 'LUG' | 'SW' | 'AR' | 'FR';
 
 interface AuthApiResponse {
   success: boolean;
@@ -267,6 +269,11 @@ export default function LoginPage() {
       <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-md">
           <div className="mb-6 flex justify-end">
+            <label className="sr-only" htmlFor="login-language-mode">{text('Language', 'Lulimi', 'Lugha', 'اللغة', 'Langue')}</label>
+            <select
+              id="login-language-mode"
+              value={language}
+              onChange={(event) => handleLanguageChange(event.target.value as Language)}
             <label
               className="sr-only"
               htmlFor="login-language-mode"
@@ -284,7 +291,9 @@ export default function LoginPage() {
             >
               <option value="EN">English</option>
               <option value="LUG">Luganda</option>
-              <option value="MIX">English + Luganda</option>
+              <option value="SW">Kiswahili</option>
+              <option value="AR">العربية</option>
+              <option value="FR">Français</option>
             </select>
           </div>
 
@@ -340,7 +349,7 @@ export default function LoginPage() {
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              {text('Sign up', 'Wandiise')}
+              {text('Sign up', 'Wandiise', 'Jisajili', 'إنشاء حساب', 'S\'inscrire')}
             </button>
 
             <button
@@ -352,7 +361,7 @@ export default function LoginPage() {
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              {text('Log in', 'Yingira')}
+              {text('Log in', 'Yingira', 'Ingia', 'تسجيل الدخول', 'Se connecter')}
             </button>
           </div>
 
@@ -446,6 +455,8 @@ export default function LoginPage() {
 
                 <button
                   type="button"
+                  onClick={() => setShowPin((visible) => !visible)}
+                  aria-label={showPin ? text('Hide PIN', 'Kisa PIN', 'Ficha PIN', 'إخفاء PIN', 'Masquer le PIN') : text('Show PIN', 'Laga PIN', 'Onyesha PIN', 'إظهار PIN', 'Afficher le PIN')}
                   onClick={() =>
                     setShowPin((visible) => !visible)
                   }
@@ -509,6 +520,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-8 text-center text-xs leading-5 text-slate-400">
+            {text('By continuing, you agree to keep your account details safe and private.', 'Bw’ogenda mu maaso, okiraba obuterevu mu kukiika ebikwata ku akaawunti yo.', 'Kwa kuendelea, unakubali kuweka maelezo ya akaunti yako salama na faragha.', 'بالمتابعة، أنت توافق على الحفاظ على تفاصيل حسابك آمنة وخاصة.', 'En continuant, vous acceptez de garder les détails de votre compte sécurisés et privés.')}
             {text(
               'By continuing, you agree to keep your account details safe and private.',
               'Bw’ogenda mu maaso, okiraba obuterevu mu kukiika ebikwata ku akaawunti yo.',
