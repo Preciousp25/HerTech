@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { ArrowRight, Mic, Store, BookOpen, BarChart3 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { 
   Mic, 
@@ -314,7 +314,24 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
     URL.revokeObjectURL(downloadUrl);
   };
 
-  // --- SUB-COMPONENTS FOR EACH SCREEN ---
+export default function GetStartedPage() {
+  const router = useRouter();
+
+  return (
+    <main className="min-h-screen bg-slate-100 text-slate-900">
+      <div className="mx-auto flex min-h-screen max-w-7xl flex-col lg:flex-row">
+        {/* Left side */}
+        <section className="relative flex min-h-[45vh] flex-1 flex-col justify-between overflow-hidden bg-blue-950 px-6 py-8 text-white sm:px-10 lg:min-h-screen lg:px-14 lg:py-10">
+          {/* Decorative shapes */}
+          <div className="absolute -right-24 top-20 h-64 w-64 rounded-full border-[3rem] border-amber-500/20" />
+          <div className="absolute -bottom-32 -left-24 h-80 w-80 rounded-full bg-blue-900/70" />
+          <div className="absolute right-20 top-40 h-4 w-4 rounded-full bg-amber-400 shadow-[0_0_0_10px_rgba(245,158,11,0.12)]" />
+
+          {/* Logo */}
+          <div className="relative z-10 flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500 text-blue-950 shadow-lg">
+              <Mic size={22} strokeWidth={2.5} />
+            </div>
 
   // 1. RECORD SCREEN
   const renderRecordScreen = () => (
@@ -382,8 +399,29 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
                 isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300'
               }`}
             />
+            <div>
+              <p className="text-lg font-bold leading-none">DuukaTalk</p>
+              <p className="mt-1 text-xs font-medium text-blue-200">
+                Your shop, your story.
+              </p>
+            </div>
           </div>
-        </div>
+
+          {/* Main message */}
+          <div className="relative z-10 my-12 max-w-lg lg:my-0">
+            <p className="mb-5 text-sm font-semibold uppercase tracking-[0.22em] text-amber-400">
+              Simple books. Strong business.
+            </p>
+
+            <h1 className="text-4xl font-bold leading-tight sm:text-5xl xl:text-6xl">
+              Keep your business moving forward.
+            </h1>
+
+            <p className="mt-6 max-w-md text-base leading-7 text-blue-100 sm:text-lg">
+              Record sales, track debts, and understand your shop&apos;s
+              story in one friendly place.
+            </p>
+          </div>
 
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -516,39 +554,59 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
           </div>
         </div>
       </div>
+          {/* Footer */}
+          <p className="relative z-10 text-xs text-blue-300">
+            © 2025 DuukaTalk · Made for local businesses
+          </p>
+        </section>
 
-      {/* Search Bar */}
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-3 text-slate-400" />
-          <input 
-          type="text" 
-            placeholder={text('Search customer or item…', 'Noonya omuguzi oba ekyaguddwa…')}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className={`w-full pl-9 pr-9 py-2.5 text-xs rounded-xl border outline-none ${
-            isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 placeholder-slate-400'
-          }`}
-        />
-        <Mic size={16} className="absolute right-3 top-3 text-amber-500 cursor-pointer" />
-      </div>
+        {/* Right side */}
+        <section className="flex flex-1 items-center justify-center bg-white px-6 py-12 sm:px-10 lg:min-h-screen lg:px-16">
+          <div className="w-full max-w-lg">
+            {/* Mobile logo */}
+            <div className="mb-10 flex items-center gap-3 lg:hidden">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-blue-950">
+                <Mic size={20} strokeWidth={2.5} />
+              </div>
 
-      {/* Transactions List */}
-      <div>
-        <div className="flex justify-between items-center mb-2 px-1">
-          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{text('Transactions', 'Ebintu Ebyakozesebwa')}</span>
-          <span className="text-[11px] text-slate-400">{text('Sorted by recent', 'Bisengekeddwa okusinziira ku bipya')}</span>
-        </div>
+              <div>
+                <p className="font-bold text-blue-950">DuukaTalk</p>
+                <p className="text-xs text-slate-500">
+                  Your shop, your story.
+                </p>
+              </div>
+            </div>
 
-        <div className="space-y-2">
-          {filteredTransactions.map((tx) => (
-            <div key={tx.id} className={`p-3 rounded-xl border flex items-center justify-between ${isDarkMode ? 'bg-slate-800/60 border-slate-700/60' : 'bg-white border-slate-100 shadow-sm'}`}>
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
-                  {tx.initials}
+            <div className="mb-10">
+              <p className="mb-3 text-sm font-semibold text-amber-600">
+                Welcome to DuukaTalk
+              </p>
+
+              <h2 className="text-3xl font-bold tracking-tight text-blue-950 sm:text-4xl">
+                Your business, made simpler.
+              </h2>
+
+              <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">
+                Keep track of your sales and customer debts without the
+                stress of complicated bookkeeping.
+              </p>
+            </div>
+
+            {/* Features */}
+            <div className="space-y-4">
+              <div className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-900">
+                  <Mic size={20} />
                 </div>
+
                 <div>
-                  <h4 className="text-xs font-bold">{tx.customer}</h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">{tx.item}</p>
+                  <h3 className="font-semibold text-slate-900">
+                    Record with your voice
+                  </h3>
+                  <p className="mt-1 text-sm leading-5 text-slate-500">
+                    Speak naturally and let DuukaTalk help record your
+                    transactions.
+                  </p>
                 </div>
               </div>
               <div className="text-right">
@@ -614,14 +672,19 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
         </button>
       </div>
 
-      <div className="space-y-2.5">
-        {debts.map((debt) => <div key={debt.id} className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <div className="flex justify-between items-start">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">{debt.initials}</div>
-              <div>
-                <h4 className="text-xs font-bold">{debt.customer}</h4>
-                <p className="text-[11px] text-slate-500">{debt.item}</p>
+              <div className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                  <BookOpen size={20} />
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-slate-900">
+                    Keep your ledger organized
+                  </h3>
+                  <p className="mt-1 text-sm leading-5 text-slate-500">
+                    See your sales and customer debts in one simple ledger.
+                  </p>
+                </div>
               </div>
             </div>
             <div className="text-right">
@@ -954,7 +1017,38 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
           </button>
         </nav>
 
+              <div className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                  <BarChart3 size={20} />
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-slate-900">
+                    Understand your business
+                  </h3>
+                  <p className="mt-1 text-sm leading-5 text-slate-500">
+                    Get a clear view of sales and outstanding credit.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Get Started button */}
+            <button
+              type="button"
+              onClick={() => router.push('/login')}
+              className="mt-8 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-blue-900 px-6 text-sm font-bold text-white shadow-lg shadow-blue-950/15 transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-900/20"
+            >
+              Get Started
+              <ArrowRight size={19} />
+            </button>
+
+            <p className="mt-5 text-center text-xs text-slate-400">
+              Create an account or log in to continue.
+            </p>
+          </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

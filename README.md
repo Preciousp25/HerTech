@@ -149,4 +149,3 @@ lib/
   firestore-transaction.ts   Firestore transaction mapping
   schema.ts                   Transaction validation and types
 public/                       Static assets
-```
