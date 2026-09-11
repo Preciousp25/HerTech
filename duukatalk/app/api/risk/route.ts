@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isOutstandingCredit, CREDIT_LIMIT, LARGE_QUANTITY_THRESHOLD } from "@/lib/credit";
@@ -23,8 +23,22 @@ type Flag = {
   details: Record<string, unknown>;
 };
 
-export async function GET() {
+type Language = "EN" | "LUG" | "MIX";
+
+function localize(language: Language, english: string, luganda: string): string {
+  if (language === "EN") return english;
+  if (language === "LUG") return luganda;
+  return `${english} · ${luganda}`;
+}
+
+export async function GET(request: NextRequest) {
   try {
+    const languageParam = request.nextUrl.searchParams.get("language");
+    const language: Language =
+      languageParam === "EN" || languageParam === "LUG" || languageParam === "MIX"
+        ? languageParam
+        : "EN";
+
     const snapshot = await getDocs(collection(db, "transactions"));
     const transactions = snapshot.docs.map((doc) => doc.data() as Transaction);
 
@@ -46,7 +60,11 @@ export async function GET() {
           id: `credit_${name}`,
           type: "credit_risk",
           severity: total > CREDIT_LIMIT * 1.5 ? "critical" : "warning",
-          message: `${name} now owes UGX ${total.toLocaleString()}, over the ${CREDIT_LIMIT.toLocaleString()} limit`,
+          message: localize(
+            language,
+            `${name} now owes UGX ${total.toLocaleString()}, over the ${CREDIT_LIMIT.toLocaleString()} limit`,
+            `${name} kati alina omubanja gwa UGX ${total.toLocaleString()}, gusukkiridde ekkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}`,
+          ),
           details: { customerName: name, amountOwed: total, limit: CREDIT_LIMIT },
         });
       }
@@ -60,7 +78,11 @@ export async function GET() {
           id: `stock_${txn.transaction_id}`,
           type: "stock_movement",
           severity: "warning",
-          message: `Unusually large quantity recorded for ${txn.item} (${quantity})`,
+          message: localize(
+            language,
+            `Unusually large quantity recorded for ${txn.item} (${quantity})`,
+            `Omuwendo omunene ogutali bulijjo gulabiddwa ku ${txn.item} (${quantity})`,
+          ),
           details: { item: txn.item, quantity, threshold: LARGE_QUANTITY_THRESHOLD, transactionId: txn.transaction_id },
         });
       }
@@ -77,7 +99,11 @@ export async function GET() {
           id: `due_${txn.transaction_id}`,
           type: "due_date",
           severity: dueDay < today ? "critical" : "warning",
-          message: `${txn.customer_name}'s payment for ${txn.item} was due ${txn.due_date}`,
+          message: localize(
+            language,
+            `${txn.customer_name}'s payment for ${txn.item} was due ${txn.due_date}`,
+            `Okusasula kwa ${txn.customer_name} ku ${txn.item} kwali kutuuse ${txn.due_date}`,
+          ),
           details: {
             customerName: txn.customer_name,
             item: txn.item,
@@ -103,7 +129,11 @@ export async function GET() {
         id: "shop_cash_vs_credit",
         type: "cash_vs_credit",
         severity: "critical",
-        message: `Outstanding credit (UGX ${totalCredit.toLocaleString()}) exceeds cash at hand (UGX ${totalCash.toLocaleString()})`,
+        message: localize(
+          language,
+          `Outstanding credit (UGX ${totalCredit.toLocaleString()}) exceeds cash at hand (UGX ${totalCash.toLocaleString()})`,
+          `Amabanja agasigadde (UGX ${totalCredit.toLocaleString()}) gasukkiridde ssente eziriwo (UGX ${totalCash.toLocaleString()})`,
+        ),
         details: { totalCash, totalCredit },
       });
     }

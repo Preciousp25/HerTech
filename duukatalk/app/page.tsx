@@ -94,12 +94,7 @@ interface ApiRiskFlag {
   message: string;
 }
 
-const RISK_POPUP_TITLE: Record<RiskFlagType, string> = {
-  credit_risk: 'Credit risk',
-  stock_movement: 'Stock alert',
-  due_date: 'Payment due',
-  cash_vs_credit: 'Cash vs credit',
-};
+
 
 interface VoiceTransaction {
   item?: string | null;
@@ -166,7 +161,24 @@ function safeFormatDateTime(value?: string | null): string {
 
 const CREDIT_LIMIT = 15000;
 
-function buildRiskFlagsFromTransactions(transactions: Transaction[]): ApiRiskFlag[] {
+type AppLanguage = 'EN' | 'LUG' | 'MIX';
+
+function localizeText(language: AppLanguage, english: string, luganda: string): string {
+  return language === 'EN' ? english : language === 'LUG' ? luganda : `${english} \u00b7 ${luganda}`;
+}
+
+function getRiskTitle(type: RiskFlagType, language: AppLanguage): string {
+  const titles: Record<RiskFlagType, [string, string]> = {
+    credit_risk: ['Credit risk', "Akabi k'omubanja"],
+    stock_movement: ['Stock alert', "Akabi k'ebiragalidde"],
+    due_date: ['Payment due', 'Okusasula kutuuse'],
+    cash_vs_credit: ['Cash vs credit', 'Ssente ku mubanja'],
+  };
+  const [en, lug] = titles[type];
+  return localizeText(language, en, lug);
+}
+
+function buildRiskFlagsFromTransactions(transactions: Transaction[], language: AppLanguage): ApiRiskFlag[] {
   const flags: ApiRiskFlag[] = [];
   const creditTotals: Record<string, number> = {};
   let totalCash = 0;
@@ -187,7 +199,11 @@ function buildRiskFlagsFromTransactions(transactions: Transaction[]): ApiRiskFla
         id: `credit_${name}`,
         type: 'credit_risk',
         severity: total > CREDIT_LIMIT * 1.5 ? 'critical' : 'warning',
-        message: `${name} now owes UGX ${total.toLocaleString()}, over the ${CREDIT_LIMIT.toLocaleString()} limit`,
+        message: localizeText(
+          language,
+          `${name} now owes UGX ${total.toLocaleString()}, over the ${CREDIT_LIMIT.toLocaleString()} limit`,
+          `${name} kati alina omubanja gwa UGX ${total.toLocaleString()}, gusukkiridde ekkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}`,
+        ),
       });
     }
   }
@@ -198,7 +214,11 @@ function buildRiskFlagsFromTransactions(transactions: Transaction[]): ApiRiskFla
       id: `due_${txn.id}`,
       type: 'due_date',
       severity: 'warning',
-      message: `${txn.customer}'s payment for ${txn.item} is ${txn.dueDate.toLowerCase()}`,
+      message: localizeText(
+        language,
+        `${txn.customer}'s payment for ${txn.item} is ${txn.dueDate.toLowerCase()}`,
+        `Okusasula kwa ${txn.customer} ku ${txn.item} ${txn.dueDate.toLowerCase()}`,
+      ),
     });
   }
 
@@ -207,7 +227,11 @@ function buildRiskFlagsFromTransactions(transactions: Transaction[]): ApiRiskFla
       id: 'shop_cash_vs_credit',
       type: 'cash_vs_credit',
       severity: 'critical',
-      message: `Outstanding credit (UGX ${totalCredit.toLocaleString()}) exceeds cash at hand (UGX ${totalCash.toLocaleString()})`,
+      message: localizeText(
+        language,
+        `Outstanding credit (UGX ${totalCredit.toLocaleString()}) exceeds cash at hand (UGX ${totalCash.toLocaleString()})`,
+        `Amabanja agasigadde (UGX ${totalCredit.toLocaleString()}) gasukkiridde ssente eziriwo (UGX ${totalCash.toLocaleString()})`,
+      ),
     });
   }
 
@@ -250,7 +274,7 @@ export default function DuukaTalkApp() {
       fetch('/api/ledger'),
       fetch('/api/summary'),
       fetch('/api/credit'),
-      fetch('/api/risk'),
+      fetch(`/api/risk?language=${language}`),
     ]);
     let failedRoutes = 0;
 
@@ -314,20 +338,21 @@ export default function DuukaTalkApp() {
       })));
     }
 
-    // ✅ FIX: merge flags, never replace, never reset dismissals
+    // ✅ FIX: replace flags with a matching id so language changes actually
+    // take effect, while keeping any old flags no longer returned.
     if (riskData?.flags) {
       setRiskFlags((prev) => {
         const incoming = riskData.flags as ApiRiskFlag[];
-        const existingIds = new Set(prev.map((f) => f.id));
-        const newFlags = incoming.filter((f) => f.id && !existingIds.has(f.id));
-        return [...prev, ...newFlags];
+        const incomingIds = new Set(incoming.map((f) => f.id));
+        const stale = prev.filter((f) => f.id && !incomingIds.has(f.id));
+        return [...stale, ...incoming];
       });
       setHasLiveRisk(true);
     }
 
     if (failedRoutes > 0) setApiError('Live data is unavailable for some screens. Showing local data.');
     else setApiError('');
-  }, []);
+  }, [language]);
 
   useEffect(() => { void loadApiData(); }, [loadApiData]);
 
@@ -355,21 +380,6 @@ export default function DuukaTalkApp() {
     try {
       await syncOfflineTransactions();
       await syncOfflineVoiceNotes();
-
-      // ✅ notify debtors for any credit transactions that just synced from the offline queue
-      pendingTx
-        .filter((entry) => entry.paymentType === 'credit')
-        .forEach((entry) => {
-          fetch('/api/sms', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'debtor',
-              message: `DuukaTalk: You owe UGX ${entry.amount.toLocaleString()} for ${entry.item}. Please settle with your vendor soon.`,
-            }),
-          }).catch((error) => console.warn('Debtor SMS request failed for queued transaction:', entry.id, error));
-        });
-
       await loadApiData();
     } catch (error) {
       console.error('Failed to sync offline queue:', error);
@@ -394,7 +404,7 @@ export default function DuukaTalkApp() {
 
   const text = (english: string, luganda: string) => language === 'EN' ? english : language === 'LUG' ? luganda : `${english} · ${luganda}`;
   const riskFlagKey = (flag: ApiRiskFlag, index: number) => flag.id || `${flag.type}-${index}`;
-  const displayRiskFlags = hasLiveRisk ? riskFlags : buildRiskFlagsFromTransactions(transactions);
+  const displayRiskFlags = hasLiveRisk ? riskFlags : buildRiskFlagsFromTransactions(transactions, language);
   const visibleRiskFlags = displayRiskFlags.map((flag, index) => ({ flag, index })).filter(({ flag, index }) => !dismissedRiskIds.includes(riskFlagKey(flag, index)));
   const dismissRiskFlag = (flagId: string) => { setDismissedRiskIds((current) => (current.includes(flagId) ? current : [...current, flagId])); };
   const toggleTheme = () => setIsDarkMode(prev => !prev);
@@ -441,7 +451,13 @@ export default function DuukaTalkApp() {
       const response = await fetch('/api/ledger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer: customerName, item: newTransaction.item, amount, paymentType: newTransaction.type }),
+        body: JSON.stringify({
+          customer: customerName,
+          item: newTransaction.item,
+          amount,
+          paymentType: newTransaction.type,
+          language,
+        }),
       });
       if (!response.ok) {
         const result = await response.json().catch(() => null) as { error?: string } | null;
@@ -457,18 +473,6 @@ export default function DuukaTalkApp() {
     }
 
     saveLocally(false);
-
-    if (newTransaction.type === 'credit') {
-      fetch('/api/sms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'debtor',
-          message: `DuukaTalk: You owe UGX ${amount.toLocaleString()} for ${newTransaction.item}. Please settle with your vendor soon.`,
-        }),
-      }).catch((error) => console.warn('Debtor SMS request failed:', error));
-    }
-
     setFormMessage(
       newTransaction.type === 'credit'
         ? text("Entry saved. A reminder SMS will be sent if Africa's Talking is configured.", "Ekiwandiiko kiteekeddwa. SMS ejja kuweerezebwa singa Africa's Talking etegekeddwa.")
@@ -787,7 +791,10 @@ export default function DuukaTalkApp() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   type: 'debtor',
-                  message: 'DuukaTalk: You owe UGX 18,000 for sugar. Pay by Friday. — Your Vendor',
+                  message: text(
+                    'DuukaTalk: You owe UGX 18,000 for sugar. Pay by Friday. — Your Vendor',
+                    'DuukaTalk: Olina omubanja gwa UGX 18,000 ku sukaali. Sasula nga Ffulayidde. — Katale ko'
+                  ),
                 }),
               });
               const data = await res.json() as { sent?: boolean; error?: string; skipped?: string };
@@ -859,13 +866,13 @@ export default function DuukaTalkApp() {
               {visibleRiskFlags.map(({ flag, index }) => {
                 const flagId = riskFlagKey(flag, index);
                 const isCritical = flag.severity === 'critical' || flag.type === 'credit_risk' || flag.type === 'cash_vs_credit';
-                const title = RISK_POPUP_TITLE[flag.type] || 'Alert';
+                const title = getRiskTitle(flag.type, language);
                 return (
                   <div key={flagId} role="alert" className={`rounded-xl border shadow-lg px-3 py-3 ${isCritical ? 'bg-red-50 border-red-200 text-red-900' : 'bg-amber-50 border-amber-200 text-amber-950'}`}>
                     <div className="flex items-start gap-2">
                       <AlertCircle size={18} className={`mt-0.5 shrink-0 ${isCritical ? 'text-red-600' : 'text-amber-600'}`} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold uppercase tracking-wide">{title}{flag.severity ? ` · ${flag.severity}` : ''}</p>
+                        <p className="text-xs font-bold uppercase tracking-wide">{title}{flag.severity ? ` · ${localizeText(language, flag.severity, flag.severity === 'critical' ? 'kyakabi' : 'kya kwegendereza')}` : ''}</p>
                         <p className="text-sm font-medium leading-snug mt-0.5">{flag.message}</p>
                       </div>
                       <button type="button" onClick={() => dismissRiskFlag(flagId)} className={`shrink-0 rounded-md p-1 ${isCritical ? 'hover:bg-red-100' : 'hover:bg-amber-100'}`} aria-label="Dismiss alert"><X size={16} /></button>

@@ -62,8 +62,15 @@ export async function notifyAfterTransaction(input: {
       }
     }
 
-    const due = input.dueDate && input.dueDate !== "N/A" ? ` Pay by ${input.dueDate}.` : "";
-    const debtorMessage = `DuukaTalk: You owe UGX ${input.amount.toLocaleString()} for ${input.item}.${due} — from your vendor.`;
+    // Debtor never picked a language, so always show both — MIX regardless of
+    // the vendor's own UI setting, so the customer isn't at the mercy of it.
+    const dueEn = input.dueDate && input.dueDate !== "N/A" ? ` Pay by ${input.dueDate}.` : "";
+    const dueLug = input.dueDate && input.dueDate !== "N/A" ? ` Sasula nga ${input.dueDate}.` : "";
+    const debtorMessage = localize(
+      "MIX",
+      `DuukaTalk: You owe UGX ${input.amount.toLocaleString()} for ${input.item}.${dueEn} — from your vendor.`,
+      `DuukaTalk: Olina omubanja gwa UGX ${input.amount.toLocaleString()} ku ${input.item}.${dueLug} — okuva ku katale ko.`,
+    );
 
     if (customerPhone) {
       const result = await sendSms(customerPhone, debtorMessage);
