@@ -27,9 +27,12 @@ export async function GET(request: NextRequest) {
 
     const snapshot = await getDocs(transactionsQuery);
 
+    // Always use the actual Firestore document ID as "id".
+    // Putting id: doc.id AFTER ...doc.data() prevents
+    // any existing "id" field in the document from overwriting it.
     const transactions = snapshot.docs.map((doc) => ({
-      id: doc.id,
       ...doc.data(),
+      id: doc.id,
     }));
 
     return NextResponse.json({ transactions });
