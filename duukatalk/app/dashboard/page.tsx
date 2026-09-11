@@ -1,43 +1,8 @@
-'use client';
-
-import React, { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import {
-  Mic,
-  Moon,
-  Sun,
-  Store,
-  User,
-  Package,
-  DollarSign,
-  CheckCircle,
-  BookOpen,
-  CreditCard,
-  BarChart3,
-  Edit3,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  AlertCircle,
-  TrendingUp,
-  Loader2,
-  LogOut,
-  X,
-  Save,
-  Trash2,
-  Plus
-  ,Settings
-} from 'lucide-react';
 import {
   LANGUAGE_OPTIONS,
   Language,
   translate,
 } from '@/lib/i18n';
-
-// --- TYPES ---
-
-type TabType = 'record' | 'ledgers' | 'debts' | 'reports';
 
 const navItems: Array<{
   name: string;
@@ -119,6 +84,12 @@ interface VoiceToJsonResponse {
   success: boolean;
   transcript?: string;
   transaction?: VoiceTransaction;
+
+  // IMPORTANT:
+  // This is the real Firestore document ID returned by
+  // /api/voice-to-json.
+  transactionId?: string;
+
   error?: string;
 }
 
@@ -224,7 +195,7 @@ export default function DuukaTalkApp() {
     customer: '',
     item: '',
     amount: '',
-    paymentType: 'cash'
+    paymentType: 'cash',
   });
 
   // Voice recording refs
@@ -269,34 +240,30 @@ export default function DuukaTalkApp() {
 
       const data = (await response.json()) as ApiDebt[];
 
-      const databaseDebts: Debt[] = data.map(
-        (debt, index) => {
-          const customer =
-            debt.customerName || 'Unknown customer';
+      const databaseDebts: Debt[] = data.map((debt, index) => {
+        const customer = debt.customerName || 'Unknown customer';
 
-          const amount =
-            typeof debt.amountOwed === 'number'
-              ? debt.amountOwed
-              : Number(debt.amountOwed) || 0;
+        const amount =
+          typeof debt.amountOwed === 'number'
+            ? debt.amountOwed
+            : Number(debt.amountOwed) || 0;
 
-          const dueDates =
-            Array.isArray(debt.dueDates)
-              ? debt.dueDates
-              : [];
+        const dueDates = Array.isArray(debt.dueDates)
+          ? debt.dueDates
+          : [];
 
-          return {
-            id: `debt-${customer}-${index}`,
-            customer,
-            initials: deriveInitials(customer),
-            item: 'Credit balance',
-            amount,
-            dueDate:
-              dueDates.length > 0
-                ? dueDates[0]
-                : 'No due date',
-          };
-        }
-      );
+        return {
+          id: `debt-${customer}-${index}`,
+          customer,
+          initials: deriveInitials(customer),
+          item: 'Credit balance',
+          amount,
+          dueDate:
+            dueDates.length > 0
+              ? dueDates[0]
+              : 'No due date',
+        };
+      });
 
       setDebts(databaseDebts);
     } catch (error) {
@@ -378,7 +345,7 @@ export default function DuukaTalkApp() {
               const itemParts = [
                 transaction.quantity,
                 transaction.unit,
-                transaction.item
+                transaction.item,
               ].filter(
                 (value) =>
                   value !== undefined &&
@@ -524,7 +491,7 @@ export default function DuukaTalkApp() {
         [
           transaction.customer,
           transaction.item,
-          transaction.type
+          transaction.type,
         ].some((value) =>
           value.toLowerCase().includes(query)
         )
@@ -594,8 +561,7 @@ export default function DuukaTalkApp() {
       amount: String(transaction.amount),
       paymentType: transaction.type,
       dueDate:
-        transaction.dueDate
-          ?.replace(/^Due\s+/i, '') || '',
+        transaction.dueDate?.replace(/^Due\s+/i, '') || '',
     });
   };
 
@@ -717,8 +683,6 @@ export default function DuukaTalkApp() {
         // Transaction update already succeeded.
       }
 
-      // Refresh debts because the transaction may have
-      // changed between cash and credit.
       await loadDebts();
     } catch (error) {
       setEditError(
@@ -822,7 +786,6 @@ export default function DuukaTalkApp() {
         // Transaction was already deleted successfully.
       }
 
-      // Refresh debts after deletion.
       await loadDebts();
     } catch (error) {
       setDeleteError(
@@ -888,7 +851,7 @@ export default function DuukaTalkApp() {
       setDebts((currentDebts) => [
         {
           ...newTransaction,
-          dueDate: 'Due soon'
+          dueDate: 'Due soon',
         },
         ...currentDebts,
       ]);
@@ -898,7 +861,7 @@ export default function DuukaTalkApp() {
       customer: '',
       item: '',
       amount: '',
-      paymentType: 'cash'
+      paymentType: 'cash',
     });
 
     setFormMessage(
@@ -920,7 +883,7 @@ export default function DuukaTalkApp() {
         'Item',
         'Amount (UGX)',
         'Type',
-        'Date'
+        'Date',
       ],
 
       ...filteredTransactions.map(
@@ -929,7 +892,7 @@ export default function DuukaTalkApp() {
           transaction.item,
           String(transaction.amount),
           transaction.type,
-          transaction.date
+          transaction.date,
         ]
       ),
     ];
@@ -947,7 +910,7 @@ export default function DuukaTalkApp() {
 
     const downloadUrl = URL.createObjectURL(
       new Blob([csv], {
-        type: 'text/csv;charset=utf-8;'
+        type: 'text/csv;charset=utf-8;',
       })
     );
 
@@ -1047,6 +1010,24 @@ export default function DuukaTalkApp() {
         return;
       }
 
+      // IMPORTANT:
+      // The backend already created the Firestore document.
+      // We MUST use its real document ID here.
+      if (!data.transactionId) {
+        console.error(
+          'Voice transaction was saved but no transactionId was returned.'
+        );
+
+        setMicError(
+          text(
+            'The transaction was processed, but its database ID was missing. Please refresh and try again.',
+            'Ekiwandiiko kikolebwa naye ID yaakyo mu database ebula. Ddamu orefreshing ogezeeko.'
+          )
+        );
+
+        return;
+      }
+
       const voiceTx = data.transaction;
 
       const customerName =
@@ -1074,7 +1055,7 @@ export default function DuukaTalkApp() {
       const itemParts = [
         quantity,
         voiceTx.unit,
-        voiceTx.item
+        voiceTx.item,
       ].filter(
         (
           part
@@ -1101,12 +1082,17 @@ export default function DuukaTalkApp() {
         safeFormatDate(voiceTx.dueDate);
 
       const newTransaction: Transaction = {
-        id: crypto.randomUUID(),
+        // IMPORTANT:
+        // Use the actual Firestore document ID returned
+        // by the backend instead of generating a random UUID.
+        id: data.transactionId,
+
         customer: customerName,
         initials: deriveInitials(customerName),
         item: itemLabel,
         amount,
         type: paymentType,
+
         dueDate:
           paymentType === 'credit'
             ? dueDateLabel
@@ -1115,6 +1101,7 @@ export default function DuukaTalkApp() {
             : dueDateLabel
               ? `Due ${dueDateLabel}`
               : undefined,
+
         date: safeFormatDateTime(
           voiceTx.timestamp
         ),
@@ -1199,7 +1186,7 @@ export default function DuukaTalkApp() {
     try {
       const stream =
         await navigator.mediaDevices.getUserMedia({
-          audio: true
+          audio: true,
         });
 
       activeStreamRef.current = stream;
@@ -1212,7 +1199,7 @@ export default function DuukaTalkApp() {
           preferredMimeType
         )
           ? new MediaRecorder(stream, {
-              mimeType: preferredMimeType
+              mimeType: preferredMimeType,
             })
           : new MediaRecorder(stream);
 
@@ -1241,7 +1228,7 @@ export default function DuukaTalkApp() {
         const audioBlob = new Blob(
           audioChunksRef.current,
           {
-            type: mimeType
+            type: mimeType,
           }
         );
 
@@ -1505,7 +1492,7 @@ export default function DuukaTalkApp() {
               onChange={(e) =>
                 setFormData({
                   ...formData,
-                  customer: e.target.value
+                  customer: e.target.value,
                 })
               }
               className={`w-full pl-9 pr-3 py-2 text-sm rounded-lg border outline-none ${
@@ -1538,7 +1525,7 @@ export default function DuukaTalkApp() {
               onChange={(e) =>
                 setFormData({
                   ...formData,
-                  item: e.target.value
+                  item: e.target.value,
                 })
               }
               className={`w-full pl-9 pr-3 py-2 text-sm rounded-lg border outline-none ${
@@ -1570,7 +1557,7 @@ export default function DuukaTalkApp() {
               onChange={(e) =>
                 setFormData({
                   ...formData,
-                  amount: e.target.value
+                  amount: e.target.value,
                 })
               }
               className={`w-full pl-12 pr-3 py-2 text-sm font-semibold rounded-lg border outline-none ${
@@ -1588,7 +1575,7 @@ export default function DuukaTalkApp() {
             onClick={() =>
               setFormData({
                 ...formData,
-                paymentType: 'cash'
+                paymentType: 'cash',
               })
             }
             className={`py-2 px-3 rounded-lg border flex items-center justify-center gap-2 text-xs font-medium transition ${
@@ -1611,7 +1598,7 @@ export default function DuukaTalkApp() {
             onClick={() =>
               setFormData({
                 ...formData,
-                paymentType: 'credit'
+                paymentType: 'credit',
               })
             }
             className={`py-2 px-3 rounded-lg border flex items-center justify-center gap-2 text-xs font-medium transition ${
@@ -1689,7 +1676,7 @@ export default function DuukaTalkApp() {
                 {
                   weekday: 'long',
                   day: 'numeric',
-                  month: 'short'
+                  month: 'short',
                 }
               )}
             </span>
@@ -1789,7 +1776,6 @@ export default function DuukaTalkApp() {
           </div>
 
           <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-blue-800/60 text-xs">
-
             <div>
               <span className="text-blue-300 text-[11px]">
                 {text(
@@ -1871,7 +1857,6 @@ export default function DuukaTalkApp() {
           </div>
 
           <div className="space-y-2">
-
             {isLoadingData && (
               <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-500">
                 <Loader2
@@ -1898,7 +1883,6 @@ export default function DuukaTalkApp() {
                     }`}
                   >
                     <div className="flex items-center justify-between gap-3">
-
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-9 h-9 shrink-0 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
                           {tx.initials}
@@ -1920,14 +1904,12 @@ export default function DuukaTalkApp() {
                       </div>
 
                       <div className="text-right shrink-0">
-
                         <div className="text-xs font-bold">
                           UGX{' '}
                           {tx.amount.toLocaleString()}
                         </div>
 
                         <div className="flex items-center justify-end gap-1.5 mt-1">
-
                           <span
                             className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
                               tx.type === 'cash'
@@ -1978,10 +1960,8 @@ export default function DuukaTalkApp() {
                           >
                             <Trash2 size={13} />
                           </button>
-
                         </div>
                       </div>
-
                     </div>
                   </div>
                 )
@@ -2029,7 +2009,6 @@ export default function DuukaTalkApp() {
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-
         <div
           className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden ${
             isDarkMode
@@ -2037,7 +2016,6 @@ export default function DuukaTalkApp() {
               : 'bg-white text-slate-800'
           }`}
         >
-
           {/* Modal Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
             <div>
@@ -2069,7 +2047,6 @@ export default function DuukaTalkApp() {
 
           {/* Modal Body */}
           <div className="p-5 space-y-4">
-
             {/* Customer */}
             <div>
               <label className="block text-xs font-semibold mb-1.5 text-slate-600 dark:text-slate-300">
@@ -2092,7 +2069,7 @@ export default function DuukaTalkApp() {
                     setEditFormData({
                       ...editFormData,
                       customer:
-                        event.target.value
+                        event.target.value,
                     })
                   }
                   className={`w-full pl-9 pr-3 py-2.5 text-sm rounded-lg border outline-none ${
@@ -2125,7 +2102,7 @@ export default function DuukaTalkApp() {
                   onChange={(event) =>
                     setEditFormData({
                       ...editFormData,
-                      item: event.target.value
+                      item: event.target.value,
                     })
                   }
                   className={`w-full pl-9 pr-3 py-2.5 text-sm rounded-lg border outline-none ${
@@ -2158,7 +2135,7 @@ export default function DuukaTalkApp() {
                   onChange={(event) =>
                     setEditFormData({
                       ...editFormData,
-                      amount: event.target.value
+                      amount: event.target.value,
                     })
                   }
                   className={`w-full pl-12 pr-3 py-2.5 text-sm font-semibold rounded-lg border outline-none ${
@@ -2180,13 +2157,12 @@ export default function DuukaTalkApp() {
               </label>
 
               <div className="grid grid-cols-2 gap-2">
-
                 <button
                   type="button"
                   onClick={() =>
                     setEditFormData({
                       ...editFormData,
-                      paymentType: 'cash'
+                      paymentType: 'cash',
                     })
                   }
                   className={`py-2.5 rounded-lg border text-xs font-semibold transition ${
@@ -2207,7 +2183,7 @@ export default function DuukaTalkApp() {
                   onClick={() =>
                     setEditFormData({
                       ...editFormData,
-                      paymentType: 'credit'
+                      paymentType: 'credit',
                     })
                   }
                   className={`py-2.5 rounded-lg border text-xs font-semibold transition ${
@@ -2222,7 +2198,6 @@ export default function DuukaTalkApp() {
                     'Omubanja'
                   )}
                 </button>
-
               </div>
             </div>
 
@@ -2242,7 +2217,7 @@ export default function DuukaTalkApp() {
                   onChange={(event) =>
                     setEditFormData({
                       ...editFormData,
-                      dueDate: event.target.value
+                      dueDate: event.target.value,
                     })
                   }
                   className={`w-full px-3 py-2.5 text-sm rounded-lg border outline-none ${
@@ -2263,7 +2238,6 @@ export default function DuukaTalkApp() {
 
             {/* Buttons */}
             <div className="grid grid-cols-2 gap-3 pt-2">
-
               <button
                 type="button"
                 onClick={handleCancelEdit}
@@ -2305,7 +2279,6 @@ export default function DuukaTalkApp() {
                   </>
                 )}
               </button>
-
             </div>
           </div>
         </div>
@@ -2324,7 +2297,6 @@ export default function DuukaTalkApp() {
 
     return (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-
         <div
           className={`w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden ${
             isDarkMode
@@ -2332,11 +2304,9 @@ export default function DuukaTalkApp() {
               : 'bg-white text-slate-800'
           }`}
         >
-
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-3">
-
               <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center">
                 <Trash2 size={19} />
               </div>
@@ -2356,7 +2326,6 @@ export default function DuukaTalkApp() {
                   )}
                 </p>
               </div>
-
             </div>
 
             <button
@@ -2372,7 +2341,6 @@ export default function DuukaTalkApp() {
 
           {/* Transaction Preview */}
           <div className="p-5">
-
             <div
               className={`rounded-xl border p-3 mb-4 ${
                 isDarkMode
@@ -2381,7 +2349,6 @@ export default function DuukaTalkApp() {
               }`}
             >
               <div className="flex items-center justify-between gap-3">
-
                 <div className="min-w-0">
                   <p className="text-xs font-bold truncate">
                     {deletingTransaction.customer}
@@ -2410,7 +2377,6 @@ export default function DuukaTalkApp() {
                       : 'Credit'}
                   </span>
                 </div>
-
               </div>
             </div>
 
@@ -2423,7 +2389,6 @@ export default function DuukaTalkApp() {
 
             {/* Buttons */}
             <div className="grid grid-cols-2 gap-3">
-
               <button
                 type="button"
                 onClick={handleCancelDelete}
@@ -2465,7 +2430,6 @@ export default function DuukaTalkApp() {
                   </>
                 )}
               </button>
-
             </div>
           </div>
         </div>
@@ -2484,7 +2448,6 @@ export default function DuukaTalkApp() {
 
   const renderDebtsScreen = () => (
     <div className="space-y-4">
-
       {/* Outstanding Debt Summary */}
       <div className="bg-amber-500 rounded-2xl p-4 text-slate-950 shadow-md">
         <div className="flex justify-between items-start">
@@ -2538,7 +2501,7 @@ export default function DuukaTalkApp() {
             setFormData(
               (currentForm) => ({
                 ...currentForm,
-                paymentType: 'credit'
+                paymentType: 'credit',
               })
             );
 
@@ -2570,7 +2533,6 @@ export default function DuukaTalkApp() {
 
       {/* Debt List */}
       <div className="space-y-2.5">
-
         {isLoadingDebts && (
           <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-500">
             <Loader2
@@ -2596,9 +2558,7 @@ export default function DuukaTalkApp() {
               }`}
             >
               <div className="flex items-center justify-between gap-3">
-
                 <div className="flex items-center gap-3 min-w-0">
-
                   <div className="w-9 h-9 shrink-0 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
                     {debt.initials}
                   </div>
@@ -2616,7 +2576,6 @@ export default function DuukaTalkApp() {
                       {debt.dueDate}
                     </p>
                   </div>
-
                 </div>
 
                 <div className="text-right shrink-0">
@@ -2631,7 +2590,6 @@ export default function DuukaTalkApp() {
                     )}
                   </span>
                 </div>
-
               </div>
             </div>
           ))}
@@ -2652,7 +2610,6 @@ export default function DuukaTalkApp() {
               </p>
             </div>
           )}
-
       </div>
     </div>
   );
@@ -2683,7 +2640,6 @@ export default function DuukaTalkApp() {
 
     return (
       <div className="space-y-4">
-
         <div className="flex justify-between items-center">
           <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
             {text('Business Insights', 'Ebikwata ku Dduuka')}
@@ -2711,7 +2667,6 @@ export default function DuukaTalkApp() {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-
           <div
             className={`p-3.5 rounded-xl border ${
               isDarkMode
@@ -2753,7 +2708,6 @@ export default function DuukaTalkApp() {
               {text('From your database', 'Okuva mu database yo')}
             </span>
           </div>
-
         </div>
 
         {/* Database transaction information */}
@@ -2769,7 +2723,6 @@ export default function DuukaTalkApp() {
           </h4>
 
           <div className="space-y-3">
-
             <div className="flex justify-between text-xs">
               <span className="text-slate-500">
                 {text('Transactions recorded', 'Transactions eziwandiikiddwa')}
@@ -2811,7 +2764,6 @@ export default function DuukaTalkApp() {
                 }
               </span>
             </div>
-
           </div>
         </div>
       </div>
@@ -2830,7 +2782,6 @@ export default function DuukaTalkApp() {
           : 'bg-slate-100 text-slate-800'
       }`}
     >
-
       <div
         className={`w-full max-w-md min-h-screen sm:min-h-0 sm:h-[52.5rem] sm:rounded-3xl shadow-2xl flex flex-col justify-between overflow-hidden relative ${
           isDarkMode
@@ -2838,11 +2789,9 @@ export default function DuukaTalkApp() {
             : 'bg-white'
         }`}
       >
-
         {/* App Header */}
         <header className="bg-blue-900 text-white px-5 py-4 flex items-center justify-between shadow-md">
           <div className="flex items-center gap-2">
-
             <div className="bg-amber-500 p-2 rounded-lg text-slate-900 font-bold">
               <Mic size={18} />
             </div>
@@ -2853,7 +2802,6 @@ export default function DuukaTalkApp() {
           </div>
 
           <div className="flex items-center gap-2">
-
             <label
               className="sr-only"
               htmlFor="language-mode"
@@ -2931,7 +2879,6 @@ export default function DuukaTalkApp() {
 
         {/* Dynamic View Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-
           {activeTab === 'record' &&
             renderRecordScreen()}
 
@@ -2943,7 +2890,6 @@ export default function DuukaTalkApp() {
 
           {activeTab === 'reports' &&
             renderReportsScreen()}
-
         </div>
 
         {/* Bottom Navigation */}
@@ -2982,7 +2928,6 @@ export default function DuukaTalkApp() {
 
       {/* DELETE CONFIRMATION MODAL */}
       {renderDeleteModal()}
-
     </div>
   );
 }
