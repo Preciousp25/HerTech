@@ -91,10 +91,16 @@ const INITIAL_DEBTS: Debt[] = [
   { id: '2', customer: 'Nakato Grace', initials: 'NG', item: '2kg Super Rice', amount: 10000, dueDate: 'Due Friday' },
 ];
 
+const LANGUAGE_KEY = 'duukaTalkLanguage';
+
 export default function DuukaTalkApp() {
   const router = useRouter();
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
-  const [language, setLanguage] = useState<'EN' | 'LUG' | 'MIX'>('MIX');
+  const [language, setLanguage] = useState<'EN' | 'LUG' | 'SW' | 'AR' | 'FR'>(() => {
+    if (typeof window === 'undefined') return 'EN';
+    const stored = window.localStorage.getItem(LANGUAGE_KEY) as 'EN' | 'LUG' | 'SW' | 'AR' | 'FR' | null;
+    return stored ?? 'EN';
+  });
   const [activeTab, setActiveTab] = useState<TabType>('record');
   const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
   const [debts, setDebts] = useState<Debt[]>(INITIAL_DEBTS);
@@ -102,6 +108,26 @@ export default function DuukaTalkApp() {
   const [summary, setSummary] = useState<ApiSummary | null>(null);
   const [riskFlags, setRiskFlags] = useState<ApiRiskFlag[]>([]);
   const [apiError, setApiError] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [shopName, setShopName] = useState('Shop');
+
+  useEffect(() => {
+    const session = typeof window !== 'undefined' ? window.localStorage.getItem('duukaTalkSession') : null;
+    if (!session) {
+      setIsAuthenticated(false);
+      router.replace('/login');
+      return;
+    }
+
+    try {
+      const parsedSession = JSON.parse(session) as { businessName?: string };
+      setShopName(parsedSession.businessName || 'Shop');
+    } catch {
+      setShopName('Shop');
+    }
+
+    setIsAuthenticated(true);
+  }, [router]);
 
   // Screen 1: Record Form State
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -175,7 +201,34 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
     return !query || [transaction.customer, transaction.item, transaction.type].some((value) => value.toLowerCase().includes(query));
   });
 
-  const text = (english: string, luganda: string) => language === 'EN' ? english : language === 'LUG' ? luganda : `${english} · ${luganda}`;
+  const text = (english: string, luganda = english, swahili = english, arabic = english, french = english) => {
+    switch (language) {
+      case 'LUG':
+        return luganda || english;
+      case 'SW':
+        return swahili || english;
+      case 'AR':
+        return arabic || english;
+      case 'FR':
+        return french || english;
+      default:
+        return english;
+    }
+  };
+
+  const handleLanguageChange = (nextLanguage: 'EN' | 'LUG' | 'SW' | 'AR' | 'FR') => {
+    setLanguage(nextLanguage);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(LANGUAGE_KEY, nextLanguage);
+    }
+  };
+
+  const cashSales = transactions.filter((transaction) => transaction.type === 'cash').reduce((sum, transaction) => sum + transaction.amount, 0);
+  const debtSales = transactions.filter((transaction) => transaction.type === 'credit').reduce((sum, transaction) => sum + transaction.amount, 0);
+  const dailySales = transactions.filter((transaction) => transaction.date.toLowerCase().includes('today')).reduce((sum, transaction) => sum + transaction.amount, 0);
+  const weeklySales = transactions.slice(0, Math.min(transactions.length, 3)).reduce((sum, transaction) => sum + transaction.amount, 0);
+  const monthlySales = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+
   const toggleTheme = () => setIsDarkMode(prev => !prev);
 
   const handleSaveEntry = (event: React.FormEvent<HTMLFormElement>) => {
@@ -236,16 +289,13 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
           <div className="bg-amber-100 dark:bg-amber-900/40 p-2.5 rounded-full text-amber-600">
             <Store size={20} />
           </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-bold text-sm">Mama Kintu</span>
-              <span className="text-sm">👋</span>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">🏬 Stall #42 · Kalerwe Market</p>
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-sm">{shopName}</span>
+            <span className="text-sm">👋</span>
           </div>
         </div>
         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
-          Online
+          {text('Online', 'Mulimu', 'Mtandaoni', 'متصل', 'En ligne')}
         </span>
       </div>
 
@@ -259,18 +309,18 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
         >
           <Mic size={36} className={isRecording ? 'text-white' : 'text-blue-900'} />
         </button>
-        <h2 className="mt-4 font-bold text-lg">{text('Tap to Speak', 'Nyiga Owogerere')}</h2>
+        <h2 className="mt-4 font-bold text-lg">{text('Tap to Speak', 'Nyiga Owogerere', 'Gusa ili kuzungumza', 'اضغط للتحدث', 'Appuyez pour parler')}</h2>
         <p className="text-xs text-blue-200 mt-1 max-w-xs leading-relaxed">
-          {text('Record a sale or debt in English or Luganda', 'Wandiika amagoba oba amabanja mu Lungereza oba Luganda')}
+          {text('Record a sale or debt in English or Luganda', 'Wandiika amagoba oba amabanja mu Lungereza oba Luganda', 'Rekodi mauzo au deni kwa Kiingereza au Kiswahili', 'سجل مبيعًا أو دينًا بالعربية أو الإنجليزية', 'Enregistrez une vente ou une dette en français ou en anglais')}
         </p>
       </div>
 
-      {apiError && <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-800" role="status">{text('Live data is unavailable for some screens. Showing local data.', "Data y'okukola tebiriwo ku screen ezimu. Tulaga data ey'omu kitundu.")}</p>}
+      {apiError && <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-800" role="status">{text('Live data is unavailable for some screens. Showing local data.', "Data y'okukola tebiriwo ku screen ezimu. Tulaga data ey'omu kitundu.", 'Data haiwezekani kwa baadhi ya skrini. Inaonyesha data ya ndani.', 'البيانات الفعلية غير متاحة لبعض الشاشات. يتم عرض البيانات المحلية.', 'Les données en direct ne sont pas disponibles sur certains écrans. Affichage des données locales.')}</p>}
 
       <div className="relative flex items-center justify-center py-1">
         <div className="border-t border-slate-200 dark:border-slate-800 w-full"></div>
         <span className="bg-white dark:bg-slate-900 px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider absolute">
-          {text('OR WRITE', 'OBA WANDIIKA')}
+          {text('OR WRITE', 'OBA WANDIIKA', 'AUANDIKE', 'أو اكتب', 'OU ÉCRIRE')}
         </span>
       </div>
 
@@ -278,18 +328,18 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
       <form onSubmit={handleSaveEntry} className="space-y-3">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
           <Edit3 size={14} />
-          <span>{text('Type manually', "Wandiika n'Engalo")}</span>
+          <span>{text('Type manually', "Wandiika n'Engalo", 'Andika kwa mikono', 'اكتب يدويًا', 'Saisir manuellement')}</span>
         </div>
 
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-            {text('Customer (Name or Phone)', 'Omuguzi (Erinnya oba Ssimu)')}
+            {text('Customer (Name or Phone)', 'Omuguzi (Erinnya oba Ssimu)', 'Mteja (Jina au Simu)', 'العميل (الاسم أو الهاتف)', 'Client (nom ou téléphone)')}
           </label>
           <div className="relative">
             <User size={16} className="absolute left-3 top-2.5 text-slate-400" />
             <input
               type="text"
-              placeholder="e.g. Nakato Grace or 0772…"
+              placeholder={text('e.g. Nakato Grace or 0772…', 'eky. Nakato Grace oba 0772…', 'mfano: Nakato Grace au 0772…', 'مثال: نكاتو غريس أو 0772…', 'ex. Nakato Grace ou 0772…')}
               value={formData.customer}
               onChange={(e) => setFormData({...formData, customer: e.target.value})}
               className={`w-full pl-9 pr-3 py-2 text-sm rounded-lg border outline-none ${
@@ -301,13 +351,13 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
 
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-            {text('Item & Quantity', 'Ebyaguddwa')}
+            {text('Item & Quantity', 'Ebyaguddwa', 'Bidhaa na Kiasi', 'العنصر والكمية', 'Article et quantité')}
           </label>
           <div className="relative">
             <Package size={16} className="absolute left-3 top-2.5 text-slate-400" />
             <input
               type="text"
-              placeholder="e.g. Kasooli 2kg, Amafuta 1L"
+              placeholder={text('e.g. Kasooli 2kg, Amafuta 1L', 'eky. Kasooli 2kg, Amafuta 1L', 'mfano: Kasooli 2kg, Mafuta 1L', 'مثال: كاسولي 2 كجم، زيت 1 لتر', 'ex. Kasooli 2kg, huile 1L')}
               value={formData.item}
               onChange={(e) => setFormData({...formData, item: e.target.value})}
               className={`w-full pl-9 pr-3 py-2 text-sm rounded-lg border outline-none ${
@@ -319,7 +369,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
 
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-            {text('Total Amount (UGX)', 'Omuwendo (UGX)')}
+            {text('Total Amount (UGX)', 'Omuwendo (UGX)', 'Jumla ya Kiasi (UGX)', 'إجمالي المبلغ (UGX)', 'Montant total (UGX)')}
           </label>
           <div className="relative">
             <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">UGX</span>
@@ -356,7 +406,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
                 : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
             }`}
           >
-            <CreditCard size={16} /> 📒 {text('Credit', 'Omubanja')}
+            <CreditCard size={16} /> 📒 {text('Credit', 'Omubanja', 'Deni', 'ائتمان', 'Crédit')}
           </button>
         </div>
 
@@ -364,7 +414,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
           type="submit"
           className="w-full py-2.5 mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 shadow-sm transition"
         >
-          <CheckCircle size={16} /> {text('Save Entry', 'Kola')} ✓
+          <CheckCircle size={16} /> {text('Save Entry', 'Kola', 'Hifadhi', 'حفظ', 'Enregistrer')} ✓
         </button>
         {formMessage && <p className="text-center text-xs font-medium text-emerald-600 dark:text-emerald-400" role="status">{formMessage}</p>}
       </form>
@@ -378,7 +428,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
       <div className="flex items-center justify-between gap-2">
         <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
           <ChevronLeft size={16} className="cursor-pointer text-slate-400 hover:text-slate-600" />
-          <span>Saturday, 5 Sept</span>
+          <span>{text('Saturday, 5 Sept', 'Sabbiiti, 5 Sept', 'Jumamosi, 5 Sept', 'السبت، 5 سبتمبر', 'Samedi, 5 Sept')}</span>
           <ChevronRight size={16} className="cursor-pointer text-slate-400 hover:text-slate-600" />
         </div>
         <button onClick={handleExport} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800">
@@ -392,19 +442,19 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
           onClick={() => setTimeframe('daily')}
           className={`py-1.5 rounded-lg transition ${timeframe === 'daily' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-900 dark:text-white font-bold' : 'text-slate-500'}`}
         >
-          {text('Daily', 'Leero')}
+          {text('Daily', 'Leero', 'Kila siku', 'يومياً', 'Quotidien')}
         </button>
         <button 
           onClick={() => setTimeframe('weekly')}
           className={`py-1.5 rounded-lg transition ${timeframe === 'weekly' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-900 dark:text-white font-bold' : 'text-slate-500'}`}
         >
-          {text('Weekly', 'Sabiti')}
+          {text('Weekly', 'Sabiti', 'Kila wiki', 'أسبوعياً', 'Hebdomadaire')}
         </button>
         <button 
           onClick={() => setTimeframe('monthly')}
           className={`py-1.5 rounded-lg transition ${timeframe === 'monthly' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-900 dark:text-white font-bold' : 'text-slate-500'}`}
         >
-          {text('Monthly', "Ogw'e")}
+          {text('Monthly', "Ogw'e", 'Kila mwezi', 'شهرياً', 'Mensuel')}
         </button>
       </div>
 
@@ -412,7 +462,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
       <div className="bg-linear-to-br from-blue-900 to-blue-950 rounded-2xl p-4 text-white shadow-md">
         <div className="flex justify-between items-start">
           <div>
-            <span className="text-[11px] text-blue-200 uppercase font-semibold tracking-wider">{text('Total inflows', 'Ebyakolwa')}</span>
+            <span className="text-[11px] text-blue-200 uppercase font-semibold tracking-wider">{text('Total inflows', 'Ebyakolwa', 'Mapato ya jumla', 'إجمالي التدفقات', 'Total des entrées')}</span>
             <div className="text-2xl font-extrabold mt-0.5">UGX {(summary?.totalSales || transactions.filter((transaction) => transaction.type === 'cash').reduce((total, transaction) => total + transaction.amount, 0)).toLocaleString()}</div>
           </div>
           <span className="inline-flex items-center text-xs font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
@@ -421,11 +471,11 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
         </div>
         <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-blue-800/60 text-xs">
           <div>
-            <span className="text-blue-300 text-[11px]">{text('Cash in Hand', 'Ssente eziri mu ngalo')}</span>
+            <span className="text-blue-300 text-[11px]">{text('Cash in Hand', 'Ssente eziri mu ngalo', 'Fedha mkononi', 'النقد في اليد', 'Espèces en main')}</span>
             <p className="font-bold text-sm">UGX {(summary?.totalSales || transactions.filter((transaction) => transaction.type === 'cash').reduce((total, transaction) => total + transaction.amount, 0)).toLocaleString()}</p>
           </div>
           <div>
-            <span className="text-blue-300 text-[11px]">{text('Credit Given', 'Amabanja agawereddwa')}</span>
+            <span className="text-blue-300 text-[11px]">{text('Credit Given', 'Amabanja agawereddwa', 'Deni iliyotolewa', 'الائتمان الممنوح', 'Crédit accordé')}</span>
             <p className="font-bold text-sm text-amber-300">UGX {(summary?.totalCreditOutstanding || debts.reduce((total, debt) => total + debt.amount, 0)).toLocaleString()}</p>
           </div>
         </div>
@@ -472,12 +522,12 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
                     : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                 }`}>
-                  {tx.type === 'cash' ? 'Cash' : tx.dueDate}
+                  {tx.type === 'cash' ? text('Cash', 'Ensimbi', 'Pesa', 'نقد', 'Espèces') : text(tx.dueDate || 'Due soon', 'Due soon', 'Inakuja hivi karibuni', 'قريبًا', 'Bientôt')}
                 </span>
               </div>
             </div>
           ))}
-          {filteredTransactions.length === 0 && <p className="py-6 text-center text-xs text-slate-500">{text('No matching transactions.', 'Tewali bizuuliddwa.')}</p>}
+          {filteredTransactions.length === 0 && <p className="py-6 text-center text-xs text-slate-500">{text('No matching transactions.', 'Tewali bizuuliddwa.', 'Hakuna miamala inayolingana.', 'لا توجد معاملات مطابقة.', 'Aucune transaction correspondante.')}</p>}
         </div>
       </div>
 
@@ -495,18 +545,18 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
       <div className="bg-amber-500 rounded-2xl p-4 text-slate-950 shadow-md">
         <div className="flex justify-between items-start">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-800">{text('Total outstanding debts', 'Amabanja gonna agakyaliwo')}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-800">{text('Total outstanding debts', 'Amabanja gonna agakyaliwo', 'Jumla ya deni zilizoendelea', 'إجمالي الديون المستحقة', 'Total des dettes impayées')}</span>
             <div className="text-2xl font-extrabold mt-0.5">UGX {debts.reduce((total, debt) => total + debt.amount, 0).toLocaleString()}</div>
           </div>
           <AlertCircle size={22} className="text-slate-900" />
         </div>
-        <p className="text-xs mt-2 font-medium text-slate-800">{debts.length} customer{debts.length === 1 ? '' : 's'} with pending balances</p>
+        <p className="text-xs mt-2 font-medium text-slate-800">{text(`${debts.length} customer${debts.length === 1 ? '' : 's'} with pending balances`, `${debts.length} omuguzi${debts.length === 1 ? '' : 's'} alina emiwendo egikyaliyo`, `${debts.length} mteja${debts.length === 1 ? '' : 's'} na salio zinasubiri`, `${debts.length} عميل${debts.length === 1 ? '' : 's'} مع أرصدة معلقة`, `${debts.length} client${debts.length === 1 ? '' : 's'} avec soldes en attente`)}</p>
       </div>
 
       <div className="flex justify-between items-center pt-2">
-        <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">{text('Active Debts', 'Amabanja agakyaliwo')}</h3>
+        <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">{text('Active Debts', 'Amabanja agakyaliwo', 'Deni Zinazoendelea', 'الديون النشطة', 'Dettes actives')}</h3>
         <button onClick={() => { setFormData((currentForm) => ({ ...currentForm, paymentType: 'credit' })); setActiveTab('record'); }} className="text-xs text-blue-600 dark:text-blue-400 font-semibold flex items-center gap-1">
-          <Plus size={14} /> {text('Add Debt', 'Yongera ibanja')}
+          <Plus size={14} /> {text('Add Debt', 'Yongera ibanja', 'Ongeza Deni', 'إضافة دين', 'Ajouter une dette')}
         </button>
       </div>
 
@@ -527,74 +577,137 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
           </div>
           <div className="flex gap-2 mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/50">
             <button onClick={() => setDebts((currentDebts) => currentDebts.filter((currentDebt) => currentDebt.id !== debt.id))} className="flex-1 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1">
-              <CheckCircle size={12} /> {text('Mark Paid', 'Kiteekeddwaako ssente')}
+              <CheckCircle size={12} /> {text('Mark Paid', 'Kiteekeddwaako ssente', 'Weka Kulipwa', 'تحديد كمدفوع', 'Marqué payé')}
             </button>
             <button className="px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1 text-slate-600 dark:text-slate-300">
-              <Phone size={12} /> {text('Call', 'Kuba essimu')}
+              <Phone size={12} /> {text('Call', 'Kuba essimu', 'Piga simu', 'اتصال', 'Appel')}
             </button>
           </div>
         </div>)}
-        {debts.length === 0 && <p className="py-6 text-center text-xs text-slate-500">{text('All debts are settled.', 'Amabanja gonna gasasuddwa.')}</p>}
+        {debts.length === 0 && <p className="py-6 text-center text-xs text-slate-500">{text('All debts are settled.', 'Amabanja gonna gasasuddwa.', 'Deni zote zamelipwa.', 'تم سداد جميع الديون.', 'Toutes les dettes sont réglées.')}</p>}
       </div>
     </div>
   );
 
   // 4. REPORTS SCREEN
   const renderReportsScreen = () => (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">{text('Business Insights', 'Ebikwata ku Dduuka')}</h3>
-        <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold">{text('This Month', 'Omwezi guno')}</span>
+    <div className="space-y-4 bg-[#eaf0f7] p-3 rounded-[18px]">
+      <div className="flex items-center justify-between rounded-2xl bg-[#edf1f6] px-2 py-1.5">
+        <div className="flex items-center gap-2">
+          <div className="h-10 w-10 rounded-xl bg-[#e7eef9] text-[#1e3a8a] shadow-sm flex items-center justify-center">
+            <BarChart3 size={18} />
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{text('Report', 'Ebipimo', 'Ripoti', 'تقرير', 'Rapport')}</div>
+            <div className="text-[13px] font-bold text-slate-700">{text('This Month', 'Omwezi guno', 'Mwezi huu', 'هذا الشهر', 'Ce mois-ci')}</div>
+          </div>
+        </div>
+        <button className="rounded-full bg-[#dfeaf6] px-3 py-1.5 text-[11px] font-semibold text-blue-800">{text('Ledger Book', 'Ebitabo', 'Kitabu cha akaunti', 'دفتر الحسابات', 'Livre de comptes')}</button>
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+        <div className="mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+          <span>{text('Total sales', 'Omuwendo gwonna ogwaginyira', 'Jumla ya mauzo', 'إجمالي المبيعات', 'Total des ventes')}</span>
+          <span className="text-[#00a76f]">{text('+14% vs Sept', '+14% vs Sept', '+14% vs Sept', '+14% vs Sept', '+14% vs Sept')}</span>
+        </div>
+        <div className="text-4xl font-black leading-none text-slate-900">UGX 4,280,000</div>
+        <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+          <div className="h-full w-[86%] rounded-full bg-blue-600" />
+        </div>
+        <div className="mt-2 text-[11px] text-slate-500">{text('Goal 5.0M (86%)', 'Ekigendere 5.0M (86%)', 'Lengo 5.0M (86%)', 'الهدف 5.0M (86%)', 'Objectif 5.0M (86%)')}</div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <span className="text-[11px] text-slate-500">{text('Total Sales', 'Amagoba gonna')}</span>
-          <div className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">UGX {(summary?.totalSales || transactions.filter((transaction) => transaction.type === 'cash').reduce((total, transaction) => total + transaction.amount, 0)).toLocaleString()}</div>
-          <span className="text-[10px] text-emerald-600 font-semibold">{text('↑ 12% vs last month', '↑ 12% okusinga omwezi oguwedde')}</span>
+        <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-slate-500">{text('Cash sales', 'Ensimbi Ezigga', 'Mauzo ya cash', 'المبيعات النقدية', 'Ventes comptant')}</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+              <TrendingUp size={16} />
+            </span>
+          </div>
+          <div className="mt-2 text-[22px] font-black text-slate-900">3.8M</div>
+          <div className="text-[11px] text-slate-500">{text('UGX · 88% of sales', 'UGX · 88% y’ebintu', 'UGX · 88% ya mauzo', 'UGX · 88% من المبيعات', 'UGX · 88% des ventes')}</div>
         </div>
-        <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <span className="text-[11px] text-slate-500">{text('Total Debt Collected', 'Amabanja agakunganyiziddwa')}</span>
-          <div className="text-base font-extrabold text-blue-600 dark:text-blue-400 mt-1">UGX {(summary?.totalCreditOutstanding || debts.reduce((total, debt) => total + debt.amount, 0)).toLocaleString()}</div>
-          <span className="text-[10px] text-blue-600 font-semibold">{text('8 customers paid', 'Abaguzi 8 basasudde')}</span>
+
+        <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-slate-500">{text('Credit sales', 'Amanjanjo', 'Mauzo ya deni', 'المبيعات بالدين', 'Ventes à crédit')}</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100 text-red-600">
+              <AlertCircle size={16} />
+            </span>
+          </div>
+          <div className="mt-2 text-[22px] font-black text-slate-900">342k</div>
+          <div className="text-[11px] text-slate-500">{text('UGX · 12% of sales', 'UGX · 12% y’ebintu', 'UGX · 12% ya mauzo', 'UGX · 12% من المبيعات', 'UGX · 12% des ventes')}</div>
         </div>
       </div>
 
-      {/* Top Selling Items */}
-      <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
-        <h4 className="text-xs font-bold mb-3">{text('Top Selling Items', 'Ebisinga okutundibwa')}</h4>
-        <div className="space-y-3">
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+        <div className="mb-3 flex items-center justify-between">
+          <h4 className="text-[13px] font-bold text-slate-700">{text('Top selling items', 'Ebitu Ebisubuulwa Ennyo', 'Bidhaa zinazouzwa zaidi', 'أكثر المنتجات مبيعًا', 'Articles les plus vendus')}</h4>
+        </div>
+        <div className="space-y-4">
           <div>
-            <div className="flex justify-between text-xs font-medium mb-1">
-              <span>Super Rice (kg)</span>
-              <span className="font-bold">142 kg</span>
+            <div className="mb-1 flex items-center justify-between text-[12px] font-medium text-slate-700">
+              <span>{text('Maize flour / Posho', 'Maize flour / Posho', 'Unga wa mahindi / Posho', 'دقيق الذرة / بوسهو', 'Farine de maïs / Posho')}</span>
+              <span className="font-bold">1.2M</span>
             </div>
-            <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
-              <div className="bg-blue-600 h-full w-[85%] rounded-full"></div>
+            <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full w-[82%] rounded-full bg-blue-600" />
             </div>
           </div>
           <div>
-            <div className="flex justify-between text-xs font-medium mb-1">
-              <span>Maize Flour (kg)</span>
-              <span className="font-bold">98 kg</span>
+            <div className="mb-1 flex items-center justify-between text-[12px] font-medium text-slate-700">
+              <span>{text('Cooking oil', 'Cooking oil', 'Mafuta ya kupikia', 'زيت الطبخ', 'Huile de cuisson')}</span>
+              <span className="font-bold">980k</span>
             </div>
-            <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
-              <div className="bg-blue-600 h-full w-[65%] rounded-full"></div>
+            <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full w-[66%] rounded-full bg-blue-600" />
             </div>
           </div>
           <div>
-            <div className="flex justify-between text-xs font-medium mb-1">
-              <span>Cooking Oil (L)</span>
-              <span className="font-bold">45 L</span>
+            <div className="mb-1 flex items-center justify-between text-[12px] font-medium text-slate-700">
+              <span>{text('Sugar / Sukari', 'Sugar / Sukari', 'Sukari', 'السكر', 'Sucre')}</span>
+              <span className="font-bold">760k</span>
             </div>
-            <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
-              <div className="bg-blue-600 h-full w-[40%] rounded-full"></div>
+            <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full w-[52%] rounded-full bg-blue-600" />
             </div>
           </div>
         </div>
       </div>
+
+      <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+        <div className="mb-2 flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#e9f0ff] text-[#2347bf]">
+            <Download size={20} />
+          </div>
+          <div>
+            <div className="text-[12px] font-bold text-slate-800">{text('This month ledger', 'Eby’ensimbi ebyomwezi guno', 'Kumbukumbu ya mwezi huu', 'دفتر هذا الشهر', 'Journal de ce mois')}</div>
+            <div className="text-[11px] text-slate-500">{text('Bank-ready PDF', 'PDF etegese okuba mu banki', 'PDF tayari kwa benki', 'PDF جاهز للبنك', 'PDF prêt pour la banque')}</div>
+          </div>
+        </div>
+
+        <button className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[#0b4cc8] py-3 text-sm font-bold text-white shadow-md shadow-blue-900/20">
+          <Download size={18} />
+          {text('Open PDF', 'Tikkula PDF', 'Fungua PDF', 'فتح PDF', 'Ouvrir le PDF')}
+        </button>
+      </div>
     </div>
   );
+
+  if (isAuthenticated === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-700">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium shadow-sm">
+          Loading your workspace...
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className={`min-h-screen flex justify-center items-center ${isDarkMode ? 'bg-gray-950 text-white' : 'bg-slate-100 text-slate-800'}`}>
@@ -607,12 +720,12 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
               <Mic size={18} />
             </div>
             <div>
-              <h1 className="font-bold text-base leading-tight">Speak Your Ledger</h1>
+              <h1 className="font-bold text-base leading-tight">{text('Speak Your Ledger', 'Yogera Ebitabo Byo', 'Zungumza Kumbukumbu Yako', 'تحدث عن دفتر الحسابات', 'Parlez de votre journal')}</h1>
               <p className="text-xs text-blue-200">
-                {activeTab === 'record' && text('Record', 'Wandiika')}
-                {activeTab === 'ledgers' && text('Ledgers', 'Ebitabo')}
-                {activeTab === 'debts' && text('Debts & Dues', 'Amabanja')}
-                {activeTab === 'reports' && text('Reports', 'Ripoota')}
+                {activeTab === 'record' && text('Record', 'Wandiika', 'Rekodi', 'تسجيل', 'Enregistrer')}
+                {activeTab === 'ledgers' && text('Ledgers', 'Ebitabo', 'Vitabu', 'دفاتر', 'Livres')}
+                {activeTab === 'debts' && text('Debts & Dues', 'Amabanja', 'Deni na Madeni', 'الديون', 'Dettes')}
+                {activeTab === 'reports' && text('Reports', 'Ripoota', 'Ripoti', 'التقارير', 'Rapports')}
               </p>
             </div>
           </div>
@@ -621,27 +734,32 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
             <select
               id="language-mode"
               value={language}
-              onChange={(event) => setLanguage(event.target.value as 'EN' | 'LUG' | 'MIX')}
+              onChange={(event) => handleLanguageChange(event.target.value as 'EN' | 'LUG' | 'SW' | 'AR' | 'FR')}
               className="max-w-28 rounded-md border border-blue-600 bg-blue-800/80 px-2 py-1 text-xs font-semibold text-white outline-none"
             >
               <option value="EN">English</option>
               <option value="LUG">Luganda</option>
-              <option value="MIX">English + Luganda</option>
+              <option value="SW">Kiswahili</option>
+              <option value="AR">العربية</option>
+              <option value="FR">Français</option>
             </select>
             <button 
               onClick={toggleTheme}
               className="p-1.5 text-blue-200 hover:text-white transition"
-              aria-label="Toggle theme"
+              aria-label={text('Toggle theme', 'Kyusa endabika', 'Badilisha mandhari', 'تبديل السمة', 'Changer le thème')}
             >
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             <button
-              onClick={() => router.push('/login')}
+              onClick={() => {
+                window.localStorage.removeItem('duukaTalkSession');
+                router.push('/login');
+              }}
               className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-blue-200 transition hover:bg-blue-800/80 hover:text-white"
-              aria-label="Log out"
+              aria-label={text('Log out', 'Fulumya', 'Toka', 'تسجيل الخروج', 'Se déconnecter')}
             >
               <LogOut size={16} />
-              <span className="hidden sm:inline">Log out</span>
+              <span className="hidden sm:inline">{text('Log out', 'Fulumya', 'Toka', 'تسجيل الخروج', 'Se déconnecter')}</span>
             </button>
           </div>
         </header>
@@ -668,7 +786,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
             }`}
           >
             <Mic size={18} />
-            <span>{text('Record', 'Wandiika')}</span>
+            <span>{text('Record', 'Wandiika', 'Rekodi', 'تسجيل', 'Enregistrer')}</span>
           </button>
 
           <button 
@@ -678,7 +796,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
             }`}
           >
             <BookOpen size={18} />
-            <span>{text('Ledgers', 'Ebitabo')}</span>
+            <span>{text('Ledgers', 'Ebitabo', 'Vitabu', 'دفاتر', 'Livres')}</span>
           </button>
 
           <button 
@@ -688,7 +806,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
             }`}
           >
             <CreditCard size={18} />
-            <span>{text('Debts & Dues', 'Amabanja')}</span>
+            <span>{text('Debts & Dues', 'Amabanja', 'Deni na Madeni', 'الديون', 'Dettes')}</span>
           </button>
 
           <button 
@@ -698,7 +816,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
             }`}
           >
             <BarChart3 size={18} />
-            <span>{text('Reports', 'Ripoota')}</span>
+            <span>{text('Reports', 'Ripoota', 'Ripoti', 'التقارير', 'Rapports')}</span>
           </button>
         </nav>
 

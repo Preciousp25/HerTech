@@ -11,13 +11,19 @@ import {
   Store,
 } from 'lucide-react';
 
+const LANGUAGE_KEY = 'duukaTalkLanguage';
+
 type AuthMode = 'signup' | 'login';
-type Language = 'EN' | 'LUG' | 'MIX';
+type Language = 'EN' | 'LUG' | 'SW' | 'AR' | 'FR';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<AuthMode>('signup');
-  const [language, setLanguage] = useState<Language>('MIX');
+  const [mode, setMode] = useState<AuthMode>('login');
+  const [language, setLanguage] = useState<Language>(() => {
+    if (typeof window === 'undefined') return 'EN';
+    const stored = window.localStorage.getItem(LANGUAGE_KEY) as Language | null;
+    return stored ?? 'EN';
+  });
   const [businessName, setBusinessName] = useState('');
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -25,15 +31,48 @@ export default function LoginPage() {
   const [error, setError] = useState('');
 
   const isSignup = mode === 'signup';
-  const text = (english: string, luganda: string) =>
-    language === 'EN' ? english : language === 'LUG' ? luganda : `${english} · ${luganda}`;
+  const text = (english: string, luganda = english, swahili = english, arabic = english, french = english) => {
+    switch (language) {
+      case 'LUG':
+        return luganda || english;
+      case 'SW':
+        return swahili || english;
+      case 'AR':
+        return arabic || english;
+      case 'FR':
+        return french || english;
+      default:
+        return english;
+    }
+  };
+
+  const handleLanguageChange = (nextLanguage: Language) => {
+    setLanguage(nextLanguage);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(LANGUAGE_KEY, nextLanguage);
+    }
+  };
+
+  const saveSession = (name: string) => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(
+        'duukaTalkSession',
+        JSON.stringify({
+          businessName: name,
+          loggedInAt: new Date().toISOString(),
+        }),
+      );
+    }
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
     setMessage('');
 
-    if (!businessName.trim()) {
+    const cleanBusinessName = businessName.trim();
+
+    if (!cleanBusinessName) {
       setError(text('Enter your business name to continue.', 'Yingiza erinnya ly’ekibiina okweyongerayo.'));
       return;
     }
@@ -43,6 +82,8 @@ export default function LoginPage() {
       return;
     }
 
+    saveSession(cleanBusinessName);
+
     if (!isSignup) {
       router.push('/');
       return;
@@ -50,10 +91,11 @@ export default function LoginPage() {
 
     setMessage(
       text(
-        `Your ${businessName.trim()} account is ready to go.`,
-        `Akaawunti ya ${businessName.trim()} eteekeddwa okukola.`,
+        `Your ${cleanBusinessName} account is ready to go.`,
+        `Akaawunti ya ${cleanBusinessName} eteekeddwa okukola.`,
       ),
     );
+    router.push('/');
   };
 
   const switchMode = (nextMode: AuthMode) => {
@@ -110,16 +152,18 @@ export default function LoginPage() {
       <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-md">
           <div className="mb-6 flex justify-end">
-            <label className="sr-only" htmlFor="login-language-mode">Language</label>
+            <label className="sr-only" htmlFor="login-language-mode">{text('Language', 'Lulimi', 'Lugha', 'اللغة', 'Langue')}</label>
             <select
               id="login-language-mode"
               value={language}
-              onChange={(event) => setLanguage(event.target.value as Language)}
+              onChange={(event) => handleLanguageChange(event.target.value as Language)}
               className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-blue-600"
             >
               <option value="EN">English</option>
               <option value="LUG">Luganda</option>
-              <option value="MIX">English + Luganda</option>
+              <option value="SW">Kiswahili</option>
+              <option value="AR">العربية</option>
+              <option value="FR">Français</option>
             </select>
           </div>
 
@@ -135,15 +179,15 @@ export default function LoginPage() {
 
           <div className="mb-8">
             <p className="mb-3 text-sm font-semibold text-amber-600">
-              {isSignup ? text('Welcome to DuukaTalk', 'Tuyambalidde DuukaTalk') : text('Welcome back', 'Tuyanjula')} 
+              {isSignup ? text('Welcome to DuukaTalk', 'Tuyambalidde DuukaTalk', 'Karibu DuukaTalk', 'مرحبًا بك في DuukaTalk', 'Bienvenue chez DuukaTalk') : text('Welcome back', 'Tuyanjula', 'Karibu tena', 'مرحبًا بعودتك', 'Bon retour')}
             </p>
             <h2 className="text-3xl font-bold tracking-tight text-blue-950 sm:text-4xl">
-              {isSignup ? text('Set up your shop.', 'Tegeka akatale ko.') : text('Log in to your shop.', 'Yingira mu katale ko.')}
+              {isSignup ? text('Set up your shop.', 'Tegeka akatale ko.', 'Sanikisha duka lako.', 'أنشئ متجرك.', 'Configurez votre boutique.') : text('Log in to your shop.', 'Yingira mu katale ko.', 'Ingia kwenye duka lako.', 'تسجيل الدخول إلى متجرك.', 'Connectez-vous à votre boutique.')}
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-500">
               {isSignup
-                ? text('Create a quick, secure account for your business.', 'Tondawo akaawunti eyanguyiriza n’eyokwerinda.')
-                : text('Enter your details to pick up where you left off.', 'Yingiza ebikukwatako okomekereza gy’oweddemu.')}
+                ? text('Create a quick, secure account for your business.', 'Tondawo akaawunti eyanguyiriza n’eyokwerinda.', 'Unda akaunti ya haraka na salama ya biashara yako.', 'أنشئ حسابًا سريعًا وآمنًا لعملك.', 'Créez un compte rapide et sécurisé pour votre entreprise.')
+                : text('Enter your details to pick up where you left off.', 'Yingiza ebikukwatako okomekereza gy’oweddemu.', 'Ingiza maelezo yako ili kuendelea kutoka kilichokoma.', 'أدخل التفاصيل لاستئناف ما بدأته.', 'Saisissez vos détails pour reprendre là où vous vous êtes arrêté.')}
             </p>
           </div>
 
@@ -157,7 +201,7 @@ export default function LoginPage() {
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              {text('Sign up', 'Wandiise')}
+              {text('Sign up', 'Wandiise', 'Jisajili', 'إنشاء حساب', 'S\'inscrire')}
             </button>
             <button
               type="button"
@@ -168,14 +212,14 @@ export default function LoginPage() {
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              {text('Log in', 'Yingira')}
+              {text('Log in', 'Yingira', 'Ingia', 'تسجيل الدخول', 'Se connecter')}
             </button>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5" noValidate>
             <div>
               <label htmlFor="business-name" className="mb-2 block text-sm font-semibold text-slate-700">
-                {text('Business name', 'Erinnya ly’ekibiina')}
+                {text('Business name', 'Erinnya ly’ekibiina', 'Jina la biashara', 'اسم العمل', 'Nom de l\'entreprise')}
               </label>
               <div className="relative">
                 <Store className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={19} />
@@ -185,7 +229,7 @@ export default function LoginPage() {
                   autoComplete="organization"
                   value={businessName}
                   onChange={(event) => setBusinessName(event.target.value)}
-                  placeholder={text("e.g. Mama Kintu's Shop", "eky. Katale ya Mama Kintu")}
+                  placeholder={text("e.g. Mama Kintu's Shop", "eky. Katale ya Mama Kintu", "mfano: Duka la Mama Kintu", "مثال: متجر أما كينتو", "ex. Boutique Mama Kintu")}
                   className="h-13 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10"
                 />
               </div>
@@ -194,9 +238,9 @@ export default function LoginPage() {
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <label htmlFor="business-pin" className="block text-sm font-semibold text-slate-700">
-                  {text('4-digit PIN', 'PIN ya namba 4')}
+                  {text('4-digit PIN', 'PIN ya namba 4', 'PIN ya nambari 4', 'PIN مكون من 4 أرقام', 'PIN à 4 chiffres')}
                 </label>
-                <span className="text-xs text-slate-400">{text('Keep it private', 'Eky’ekyama')}</span>
+                <span className="text-xs text-slate-400">{text('Keep it private', 'Eky’ekyama', 'Hifadhi kwa siri', 'احتفظ به سريًا', 'Gardez-le privé')}</span>
               </div>
               <div className="relative">
                 <LockKeyhole className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -215,7 +259,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPin((visible) => !visible)}
-                  aria-label={showPin ? text('Hide PIN', 'Kisa PIN') : text('Show PIN', 'Laga PIN')}
+                  aria-label={showPin ? text('Hide PIN', 'Kisa PIN', 'Ficha PIN', 'إخفاء PIN', 'Masquer le PIN') : text('Show PIN', 'Laga PIN', 'Onyesha PIN', 'إظهار PIN', 'Afficher le PIN')}
                   className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                 >
                   {showPin ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -230,13 +274,13 @@ export default function LoginPage() {
               type="submit"
               className="flex h-13 w-full items-center justify-center gap-2 rounded-xl bg-blue-900 px-4 text-sm font-bold text-white shadow-lg shadow-blue-950/15 transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-900/20"
             >
-              {isSignup ? text('Create my account', 'Tondawo akaawunti yange') : text('Log in', 'Yingira')}
+              {isSignup ? text('Create my account', 'Tondawo akaawunti yange', 'Unda akaunti yangu', 'إنشاء حسابي', 'Créer mon compte') : text('Log in', 'Yingira', 'Ingia', 'تسجيل الدخول', 'Se connecter')}
               <ArrowRight size={18} />
             </button>
           </form>
 
           <p className="mt-8 text-center text-xs leading-5 text-slate-400">
-            {text('By continuing, you agree to keep your account details safe and private.', 'Bw’ogenda mu maaso, okiraba obuterevu mu kukiika ebikwata ku akaawunti yo.')} 
+            {text('By continuing, you agree to keep your account details safe and private.', 'Bw’ogenda mu maaso, okiraba obuterevu mu kukiika ebikwata ku akaawunti yo.', 'Kwa kuendelea, unakubali kuweka maelezo ya akaunti yako salama na faragha.', 'بالمتابعة، أنت توافق على الحفاظ على تفاصيل حسابك آمنة وخاصة.', 'En continuant, vous acceptez de garder les détails de votre compte sécurisés et privés.')}
           </p>
         </div>
       </section>
