@@ -3,6 +3,14 @@ import { CREDIT_LIMIT, LARGE_QUANTITY_THRESHOLD } from "./credit";
 import { db } from "./firebase";
 import { sendSms } from "./sms";
 
+type Language = "EN" | "LUG" | "MIX";
+
+function localize(language: Language, english: string, luganda: string): string {
+  if (language === "EN") return english;
+  if (language === "LUG") return luganda;
+  return `${english} · ${luganda}`;
+}
+
 async function resolveCustomerPhone(
   customerName: string,
   explicitPhone?: string | null,
@@ -37,10 +45,12 @@ export async function notifyAfterTransaction(input: {
   dueDate?: string | null;
   outstandingCredit?: number;
   customerPhone?: string | null;
+  language?: Language;
 }): Promise<{ debtorSms: boolean; vendorAlerts: number }> {
   let debtorSms = false;
   let vendorAlerts = 0;
   const vendorPhone = process.env.AT_VENDOR_PHONE?.trim();
+  const language = input.language ?? "EN";
 
   if (input.paymentType === "credit" && input.customerName) {
     const customerPhone = await resolveCustomerPhone(input.customerName, input.customerPhone);
@@ -64,7 +74,11 @@ export async function notifyAfterTransaction(input: {
     if (vendorPhone && outstanding > CREDIT_LIMIT) {
       const result = await sendSms(
         vendorPhone,
-        `DuukaTalk alert: ${input.customerName} now owes UGX ${outstanding.toLocaleString()}, over the ${CREDIT_LIMIT.toLocaleString()} limit.`,
+        localize(
+          language,
+          `DuukaTalk alert: ${input.customerName} now owes UGX ${outstanding.toLocaleString()}, over the ${CREDIT_LIMIT.toLocaleString()} limit.`,
+          `DuukaTalk: ${input.customerName} kati alina omubanja gwa UGX ${outstanding.toLocaleString()}, gusukkiridde ekkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}.`,
+        ),
       );
       if (result.sent) vendorAlerts += 1;
     }
@@ -73,7 +87,11 @@ export async function notifyAfterTransaction(input: {
   if (vendorPhone && input.quantity > LARGE_QUANTITY_THRESHOLD) {
     const result = await sendSms(
       vendorPhone,
-      `DuukaTalk alert: unusually large quantity recorded for ${input.item} (${input.quantity}).`,
+      localize(
+        language,
+        `DuukaTalk alert: unusually large quantity recorded for ${input.item} (${input.quantity}).`,
+        `DuukaTalk: omuwendo omunene ogutali bulijjo gulabiddwa ku ${input.item} (${input.quantity}).`,
+      ),
     );
     if (result.sent) vendorAlerts += 1;
   }

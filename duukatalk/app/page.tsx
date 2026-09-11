@@ -355,6 +355,21 @@ export default function DuukaTalkApp() {
     try {
       await syncOfflineTransactions();
       await syncOfflineVoiceNotes();
+
+      // ✅ notify debtors for any credit transactions that just synced from the offline queue
+      pendingTx
+        .filter((entry) => entry.paymentType === 'credit')
+        .forEach((entry) => {
+          fetch('/api/sms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'debtor',
+              message: `DuukaTalk: You owe UGX ${entry.amount.toLocaleString()} for ${entry.item}. Please settle with your vendor soon.`,
+            }),
+          }).catch((error) => console.warn('Debtor SMS request failed for queued transaction:', entry.id, error));
+        });
+
       await loadApiData();
     } catch (error) {
       console.error('Failed to sync offline queue:', error);
@@ -442,6 +457,18 @@ export default function DuukaTalkApp() {
     }
 
     saveLocally(false);
+
+    if (newTransaction.type === 'credit') {
+      fetch('/api/sms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'debtor',
+          message: `DuukaTalk: You owe UGX ${amount.toLocaleString()} for ${newTransaction.item}. Please settle with your vendor soon.`,
+        }),
+      }).catch((error) => console.warn('Debtor SMS request failed:', error));
+    }
+
     setFormMessage(
       newTransaction.type === 'credit'
         ? text("Entry saved. A reminder SMS will be sent if Africa's Talking is configured.", "Ekiwandiiko kiteekeddwa. SMS ejja kuweerezebwa singa Africa's Talking etegekeddwa.")
