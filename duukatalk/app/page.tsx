@@ -23,7 +23,14 @@ import {
   TrendingUp,
   Phone,
   Plus,
-  LogOut
+  LogOut,
+  Settings,
+  ShieldCheck,
+  Smartphone,
+  LockKeyhole,
+  Palette,
+  SunMedium,
+  MoonStar
 } from 'lucide-react';
 
 // --- TYPES & MOCK DATA ---
@@ -91,6 +98,7 @@ const INITIAL_DEBTS: Debt[] = [
   { id: '2', customer: 'Nakato Grace', initials: 'NG', item: '2kg Super Rice', amount: 10000, dueDate: 'Due Friday' },
 ];
 
+const DEBT_LIMIT = 200000;
 const LANGUAGE_KEY = 'duukaTalkLanguage';
 
 export default function DuukaTalkApp() {
@@ -110,6 +118,10 @@ export default function DuukaTalkApp() {
   const [apiError, setApiError] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [shopName, setShopName] = useState('Shop');
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [privacyAction, setPrivacyAction] = useState<'none' | 'pin' | 'phone'>('none');
+  const [newPin, setNewPin] = useState('');
+  const [newPhone, setNewPhone] = useState('');
 
   useEffect(() => {
     const session = typeof window !== 'undefined' ? window.localStorage.getItem('duukaTalkSession') : null;
@@ -230,6 +242,30 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
   const monthlySales = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
 
   const toggleTheme = () => setIsDarkMode(prev => !prev);
+
+  const handleLogout = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('duukaTalkSession');
+    }
+    setShowSettingsMenu(false);
+    router.push('/login');
+  };
+
+  const handlePrivacySave = () => {
+    if (privacyAction === 'pin' && newPin.trim()) {
+      setNewPin('');
+      setPrivacyAction('none');
+      setShowSettingsMenu(false);
+      return;
+    }
+
+    if (privacyAction === 'phone' && newPhone.trim()) {
+      setNewPhone('');
+      setPrivacyAction('none');
+      setShowSettingsMenu(false);
+      return;
+    }
+  };
 
   const handleSaveEntry = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -539,8 +575,26 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
   );
 
   // 3. DEBTS & DUES SCREEN
+  const overLimitDebts = debts.filter((debt) => debt.amount > DEBT_LIMIT);
+
   const renderDebtsScreen = () => (
     <div className="space-y-4">
+      {overLimitDebts.length > 0 && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800 shadow-sm">
+          {overLimitDebts.map((debt) => {
+            const exceededAmount = debt.amount - DEBT_LIMIT;
+            return (
+              <div key={debt.id} className="flex items-start gap-2 text-xs font-semibold">
+                <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  {debt.customer} {text('has exceeded the loan limit of UGX 200,000 by UGX', 'yebulidde omupimo gw’amabanja ogw’UGX 200,000 ng’akola UGX', 'amezidi kikomo cha mkopo cha UGX 200,000 kwa UGX', 'تجاوز حد القرض البالغ UGX 200,000 بمبلغ UGX', 'a dépassé la limite de prêt de UGX 200,000 de UGX')} {exceededAmount.toLocaleString()}.
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Debts Summary Card */}
       <div className="bg-amber-500 rounded-2xl p-4 text-slate-950 shadow-md">
         <div className="flex justify-between items-start">
@@ -714,53 +768,133 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
       <div className={`w-full max-w-md min-h-screen sm:min-h-0 sm:h-[52.5rem] sm:rounded-3xl shadow-2xl flex flex-col justify-between overflow-hidden relative ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
         
         {/* App Header */}
-        <header className="bg-blue-900 text-white px-5 py-4 flex items-center justify-between shadow-md">
-          <div className="flex items-center gap-2">
-            <div className="bg-amber-500 p-2 rounded-lg text-slate-900 font-bold">
-              <Mic size={18} />
+        <header className="bg-blue-900 text-white px-5 py-4 shadow-md">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="bg-amber-500 p-2 rounded-lg text-slate-900 font-bold shrink-0">
+                <Mic size={18} />
+              </div>
+              <div className="min-w-0">
+                <h1 className="font-bold text-base leading-tight truncate">{text('Speak Your Ledger', 'Yogera Ebitabo Byo', 'Zungumza Kumbukumbu Yako', 'تحدث عن دفتر الحسابات', 'Parlez de votre journal')}</h1>
+                <p className="text-xs text-blue-200">
+                  {activeTab === 'record' && text('Record', 'Wandiika', 'Rekodi', 'تسجيل', 'Enregistrer')}
+                  {activeTab === 'ledgers' && text('Ledgers', 'Ebitabo', 'Vitabu', 'دفاتر', 'Livres')}
+                  {activeTab === 'debts' && text('Debts & Dues', 'Amabanja', 'Deni na Madeni', 'الديون', 'Dettes')}
+                  {activeTab === 'reports' && text('Reports', 'Ripoota', 'Ripoti', 'التقارير', 'Rapports')}
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="font-bold text-base leading-tight">{text('Speak Your Ledger', 'Yogera Ebitabo Byo', 'Zungumza Kumbukumbu Yako', 'تحدث عن دفتر الحسابات', 'Parlez de votre journal')}</h1>
-              <p className="text-xs text-blue-200">
-                {activeTab === 'record' && text('Record', 'Wandiika', 'Rekodi', 'تسجيل', 'Enregistrer')}
-                {activeTab === 'ledgers' && text('Ledgers', 'Ebitabo', 'Vitabu', 'دفاتر', 'Livres')}
-                {activeTab === 'debts' && text('Debts & Dues', 'Amabanja', 'Deni na Madeni', 'الديون', 'Dettes')}
-                {activeTab === 'reports' && text('Reports', 'Ripoota', 'Ripoti', 'التقارير', 'Rapports')}
-              </p>
+
+            <div className="flex items-center gap-2 shrink-0 relative">
+              <label className="sr-only" htmlFor="language-mode">Language</label>
+              <select
+                id="language-mode"
+                value={language}
+                onChange={(event) => handleLanguageChange(event.target.value as 'EN' | 'LUG' | 'SW' | 'AR' | 'FR')}
+                className="max-w-28 rounded-md border border-blue-600 bg-blue-800/80 px-2 py-1 text-xs font-semibold text-white outline-none"
+              >
+                <option value="EN">English</option>
+                <option value="LUG">Luganda</option>
+                <option value="SW">Kiswahili</option>
+                <option value="AR">العربية</option>
+                <option value="FR">Français</option>
+              </select>
+
+              <div className="relative">
+                <button
+                  onClick={() => setShowSettingsMenu((current) => !current)}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-600 bg-blue-800/80 text-blue-100 shadow-sm transition hover:bg-blue-700/80 hover:text-white"
+                  aria-label={text('Open settings', 'Tteeka settings', 'Fungua mipangilio', 'فتح الإعدادات', 'Ouvrir les paramètres')}
+                >
+                  <Settings size={18} />
+                </button>
+
+                {showSettingsMenu && (
+                  <div className="absolute right-0 top-12 w-72 rounded-2xl border border-slate-200 bg-white p-3 text-slate-800 shadow-2xl z-20">
+                    <div className="mb-2 flex items-center gap-2 rounded-xl bg-slate-100 px-2 py-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
+                        <Palette size={16} />
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{text('Theme', 'Endabika', 'Mandhari', 'السمة', 'Thème')}</div>
+                        <div className="text-sm font-semibold">{isDarkMode ? text('Dark mode', 'Mode emyufu', 'Hali ya giza', 'الوضع الداكن', 'Mode sombre') : text('Light mode', 'Mode eyaka', 'Hali ya mwanga', 'الوضع الفاتح', 'Mode clair')}</div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={toggleTheme}
+                      className="mb-2 flex w-full items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-left text-sm font-medium transition hover:bg-slate-50"
+                    >
+                      <span className="flex items-center gap-2">
+                        {isDarkMode ? <SunMedium size={16} className="text-amber-500" /> : <MoonStar size={16} className="text-indigo-600" />}
+                        {text('Switch theme', 'Kyusa endabika', 'Badilisha mandhari', 'تبديل السمة', 'Changer le thème')}
+                      </span>
+                      <span className="text-xs font-bold text-slate-500">{isDarkMode ? 'Dark' : 'Light'}</span>
+                    </button>
+
+                    <div className="mb-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                      <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                        <ShieldCheck size={14} />
+                        {text('Privacy', 'Ebyobwamibiri', 'Faragha', 'الخصوصية', 'Confidentialité')}
+                      </div>
+
+                      <div className="space-y-2">
+                        <button
+                          onClick={() => { setPrivacyAction('pin'); setShowSettingsMenu(true); }}
+                          className="flex w-full items-center justify-between rounded-lg bg-white px-2 py-2 text-left text-sm font-medium shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+                        >
+                          <span className="flex items-center gap-2">
+                            <LockKeyhole size={14} className="text-slate-500" />
+                            {text('Change PIN', 'Kyusa PIN', 'Badilisha PIN', 'تغيير PIN', 'Modifier le PIN')}
+                          </span>
+                          <ChevronRight size={14} className="text-slate-400" />
+                        </button>
+
+                        <button
+                          onClick={() => { setPrivacyAction('phone'); setShowSettingsMenu(true); }}
+                          className="flex w-full items-center justify-between rounded-lg bg-white px-2 py-2 text-left text-sm font-medium shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Smartphone size={14} className="text-slate-500" />
+                            {text('Change phone number', 'Kyusa ennamba y’essimu', 'Badilisha nambari ya simu', 'تغيير رقم الهاتف', 'Modifier le numéro de téléphone')}
+                          </span>
+                          <ChevronRight size={14} className="text-slate-400" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {privacyAction !== 'none' && (
+                      <div className="mb-2 rounded-xl border border-blue-200 bg-blue-50 p-2.5">
+                        <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-blue-700">
+                          {privacyAction === 'pin' ? text('Update PIN', 'Kyusa PIN', 'Sasisha PIN', 'تحديث PIN', 'Mettre à jour le PIN') : text('Update phone number', 'Kyusa ennamba y’essimu', 'Sasisha nambari ya simu', 'تحديث رقم الهاتف', 'Mettre à jour le numéro')}
+                        </div>
+                        <input
+                          type={privacyAction === 'pin' ? 'password' : 'tel'}
+                          value={privacyAction === 'pin' ? newPin : newPhone}
+                          onChange={(event) => privacyAction === 'pin' ? setNewPin(event.target.value) : setNewPhone(event.target.value)}
+                          placeholder={privacyAction === 'pin' ? '••••' : '+256 7xx xxx xxx'}
+                          className="w-full rounded-lg border border-blue-200 bg-white px-2 py-2 text-sm outline-none focus:border-blue-500"
+                        />
+                        <button
+                          onClick={handlePrivacySave}
+                          className="mt-2 w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white"
+                        >
+                          {text('Save', 'Kola', 'Hifadhi', 'حفظ', 'Enregistrer')}
+                        </button>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleLogout}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100"
+                    >
+                      <LogOut size={16} />
+                      {text('Log out', 'Fulumya', 'Toka', 'تسجيل الخروج', 'Se déconnecter')}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="sr-only" htmlFor="language-mode">Language</label>
-            <select
-              id="language-mode"
-              value={language}
-              onChange={(event) => handleLanguageChange(event.target.value as 'EN' | 'LUG' | 'SW' | 'AR' | 'FR')}
-              className="max-w-28 rounded-md border border-blue-600 bg-blue-800/80 px-2 py-1 text-xs font-semibold text-white outline-none"
-            >
-              <option value="EN">English</option>
-              <option value="LUG">Luganda</option>
-              <option value="SW">Kiswahili</option>
-              <option value="AR">العربية</option>
-              <option value="FR">Français</option>
-            </select>
-            <button 
-              onClick={toggleTheme}
-              className="p-1.5 text-blue-200 hover:text-white transition"
-              aria-label={text('Toggle theme', 'Kyusa endabika', 'Badilisha mandhari', 'تبديل السمة', 'Changer le thème')}
-            >
-              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-            <button
-              onClick={() => {
-                window.localStorage.removeItem('duukaTalkSession');
-                router.push('/login');
-              }}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-blue-200 transition hover:bg-blue-800/80 hover:text-white"
-              aria-label={text('Log out', 'Fulumya', 'Toka', 'تسجيل الخروج', 'Se déconnecter')}
-            >
-              <LogOut size={16} />
-              <span className="hidden sm:inline">{text('Log out', 'Fulumya', 'Toka', 'تسجيل الخروج', 'Se déconnecter')}</span>
-            </button>
           </div>
         </header>
 
