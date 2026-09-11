@@ -200,6 +200,7 @@ export async function POST(
         success: true,
         transcript: result.transcript,
         transaction,
+        transactionId: docRef.id,
       },
       { status: 200 }
     );
