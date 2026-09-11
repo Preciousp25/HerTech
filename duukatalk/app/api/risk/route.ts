@@ -15,6 +15,10 @@ type Transaction = {
 
 export async function GET() {
 	try {
+		if (!db) {
+			return NextResponse.json({ flags: [], count: 0 });
+		}
+
 		const snapshot = await getDocs(collection(db, "transactions"));
 		const transactions = snapshot.docs.map((doc) => doc.data() as Transaction);
 		const flags: {

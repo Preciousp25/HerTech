@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
@@ -32,7 +32,16 @@ export default function LoginPage() {
   const router = useRouter();
 
   const [mode, setMode] = useState<AuthMode>('signup');
-  const [language, setLanguage] = useState<Language>('MIX');
+  const [language, setLanguage] = useState<Language>('EN');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const stored = window.localStorage.getItem(LANGUAGE_KEY) as Language | null;
+    if (stored) {
+      setLanguage(stored);
+    }
+  }, []);
   const [businessName, setBusinessName] = useState('');
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -42,12 +51,27 @@ export default function LoginPage() {
 
   const isSignup = mode === 'signup';
 
-  const text = (english: string, luganda: string) =>
-    language === 'EN'
-      ? english
-      : language === 'LUG'
-        ? luganda
-        : `${english} · ${luganda}`;
+  const handleLanguageChange = (nextLanguage: Language) => {
+    setLanguage(nextLanguage);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(LANGUAGE_KEY, nextLanguage);
+    }
+  };
+
+  const text = (english: string, luganda = english, swahili = english, arabic = english, french = english) => {
+    switch (language) {
+      case 'LUG':
+        return luganda || english;
+      case 'SW':
+        return swahili || english;
+      case 'AR':
+        return arabic || english;
+      case 'FR':
+        return french || english;
+      default:
+        return english;
+    }
+  };
 
   const formatLockoutMessage = (lockedUntil: string): string => {
     const unlockDate = new Date(lockedUntil);
@@ -118,10 +142,24 @@ export default function LoginPage() {
           return;
         }
 
+        const createdBusinessName = businessName.trim();
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(
+            'duukaTalkSession',
+            JSON.stringify({
+              vendorId: data.vendorId || '',
+              businessName: createdBusinessName,
+              ownerName: data.ownerName || '',
+              phone: data.phone || '',
+              savedAt: Date.now(),
+            }),
+          );
+        }
+
         setMessage(
           text(
-            `Your ${businessName.trim()} account is ready to go. You can now log in.`,
-            `Akaawunti ya ${businessName.trim()} eteekeddwa okukola. Kati osobola okuyingira.`,
+            `Your ${createdBusinessName} account is ready to go. You can now log in.`,
+            `Akaawunti ya ${createdBusinessName} eteekeddwa okukola. Kati osobola okuyingira.`,
           ),
         );
 
@@ -174,15 +212,29 @@ export default function LoginPage() {
         return;
       }
 
-      // Login was successful.
-      // The API should return the authenticated vendorId.
+      // Login was successful. Persist the session so the dashboard can
+      // recognize the authenticated user and show the signed-in business name.
+      const authenticatedBusinessName = data.businessName || businessName.trim();
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(
+          'duukaTalkSession',
+          JSON.stringify({
+            vendorId: data.vendorId || '',
+            businessName: authenticatedBusinessName,
+            ownerName: data.ownerName || '',
+            phone: data.phone || '',
+            savedAt: Date.now(),
+          }),
+        );
+      }
+
       console.log('Vendor logged in:', {
         vendorId: data.vendorId,
-        businessName: data.businessName,
+        businessName: authenticatedBusinessName,
         ownerName: data.ownerName,
       });
 
-      router.push('/dashboard');
+      router.replace('/dashboard');
     } catch {
       setError(
         text(
@@ -274,19 +326,6 @@ export default function LoginPage() {
               id="login-language-mode"
               value={language}
               onChange={(event) => handleLanguageChange(event.target.value as Language)}
-            <label
-              className="sr-only"
-              htmlFor="login-language-mode"
-            >
-              Language
-            </label>
-
-            <select
-              id="login-language-mode"
-              value={language}
-              onChange={(event) =>
-                setLanguage(event.target.value as Language)
-              }
               className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-blue-600"
             >
               <option value="EN">English</option>
@@ -456,14 +495,10 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPin((visible) => !visible)}
-                  aria-label={showPin ? text('Hide PIN', 'Kisa PIN', 'Ficha PIN', 'إخفاء PIN', 'Masquer le PIN') : text('Show PIN', 'Laga PIN', 'Onyesha PIN', 'إظهار PIN', 'Afficher le PIN')}
-                  onClick={() =>
-                    setShowPin((visible) => !visible)
-                  }
                   aria-label={
                     showPin
-                      ? text('Hide PIN', 'Kisa PIN')
-                      : text('Show PIN', 'Laga PIN')
+                      ? text('Hide PIN', 'Kisa PIN', 'Ficha PIN', 'إخفاء PIN', 'Masquer le PIN')
+                      : text('Show PIN', 'Laga PIN', 'Onyesha PIN', 'إظهار PIN', 'Afficher le PIN')
                   }
                   className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                 >
@@ -521,10 +556,6 @@ export default function LoginPage() {
 
           <p className="mt-8 text-center text-xs leading-5 text-slate-400">
             {text('By continuing, you agree to keep your account details safe and private.', 'Bw’ogenda mu maaso, okiraba obuterevu mu kukiika ebikwata ku akaawunti yo.', 'Kwa kuendelea, unakubali kuweka maelezo ya akaunti yako salama na faragha.', 'بالمتابعة، أنت توافق على الحفاظ على تفاصيل حسابك آمنة وخاصة.', 'En continuant, vous acceptez de garder les détails de votre compte sécurisés et privés.')}
-            {text(
-              'By continuing, you agree to keep your account details safe and private.',
-              'Bw’ogenda mu maaso, okiraba obuterevu mu kukiika ebikwata ku akaawunti yo.',
-            )}
           </p>
         </div>
       </section>

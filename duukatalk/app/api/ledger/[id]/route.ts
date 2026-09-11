@@ -38,6 +38,13 @@ export async function PUT(
       );
     }
 
+    if (!db) {
+      return NextResponse.json(
+        { error: "Database is not configured" },
+        { status: 503 }
+      );
+    }
+
     // Get the transaction from Firestore
     const transactionRef = doc(db, "transactions", id);
     const transactionSnapshot = await getDoc(transactionRef);
@@ -194,6 +201,13 @@ export async function DELETE(
       return NextResponse.json(
         { error: "Transaction ID is required" },
         { status: 400 }
+      );
+    }
+
+    if (!db) {
+      return NextResponse.json(
+        { error: "Database is not configured" },
+        { status: 503 }
       );
     }
 

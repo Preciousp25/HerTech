@@ -30,6 +30,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (!db) {
+      return NextResponse.json(
+        { error: "Database is not configured" },
+        { status: 503 }
+      );
+    }
+
     // Only fetch transactions belonging to this vendor
     const transactionsQuery = query(
       collection(db, "transactions"),

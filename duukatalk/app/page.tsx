@@ -1,19 +1,19 @@
-'use client';
+﻿'use client';
 
-import { ArrowRight, Mic, Store, BookOpen, BarChart3 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { 
-  Mic, 
-  Moon, 
-  Sun, 
-  Store, 
-  User, 
-  Package, 
-  DollarSign, 
-  CheckCircle, 
-  BookOpen, 
-  CreditCard, 
-  BarChart3, 
+import React, { useEffect, useState } from 'react';
+import {
+  Mic,
+  Moon,
+  Sun,
+  Store,
+  User,
+  Package,
+  DollarSign,
+  CheckCircle,
+  BookOpen,
+  CreditCard,
+  BarChart3,
   Edit3,
   Search,
   ChevronLeft,
@@ -30,10 +30,9 @@ import {
   LockKeyhole,
   Palette,
   SunMedium,
-  MoonStar
+  MoonStar,
 } from 'lucide-react';
 
-// --- TYPES & MOCK DATA ---
 type TabType = 'record' | 'ledgers' | 'debts' | 'reports';
 
 interface Transaction {
@@ -103,12 +102,17 @@ const LANGUAGE_KEY = 'duukaTalkLanguage';
 
 export default function DuukaTalkApp() {
   const router = useRouter();
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
-  const [language, setLanguage] = useState<'EN' | 'LUG' | 'SW' | 'AR' | 'FR'>(() => {
-    if (typeof window === 'undefined') return 'EN';
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [language, setLanguage] = useState<'EN' | 'LUG' | 'SW' | 'AR' | 'FR'>('EN');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     const stored = window.localStorage.getItem(LANGUAGE_KEY) as 'EN' | 'LUG' | 'SW' | 'AR' | 'FR' | null;
-    return stored ?? 'EN';
-  });
+    if (stored) {
+      setLanguage(stored);
+    }
+  }, []);
   const [activeTab, setActiveTab] = useState<TabType>('record');
   const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
   const [debts, setDebts] = useState<Debt[]>(INITIAL_DEBTS);
@@ -122,6 +126,15 @@ export default function DuukaTalkApp() {
   const [privacyAction, setPrivacyAction] = useState<'none' | 'pin' | 'phone'>('none');
   const [newPin, setNewPin] = useState('');
   const [newPhone, setNewPhone] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [formData, setFormData] = useState<{ customer: string; item: string; amount: string; paymentType: Transaction['type'] }>({
+    customer: '',
+    item: '',
+    amount: '',
+    paymentType: 'cash',
+  });
+  const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const session = typeof window !== 'undefined' ? window.localStorage.getItem('duukaTalkSession') : null;
@@ -140,14 +153,6 @@ export default function DuukaTalkApp() {
 
     setIsAuthenticated(true);
   }, [router]);
-
-  // Screen 1: Record Form State
-  const [isRecording, setIsRecording] = useState<boolean>(false);
-const [formData, setFormData] = useState<{ customer: string; item: string; amount: string; paymentType: Transaction['type'] }>({ customer: '', item: '', amount: '', paymentType: 'cash' });
-
-  // Screen 2: Ledgers State
-  const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const loadApiData = async () => {
@@ -190,7 +195,9 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
           };
         }));
       }
+
       if (summaryData) setSummary(summaryData);
+
       if (creditData?.customers) {
         setDebts(creditData.customers.map((customer, index) => ({
           id: `credit-${index}-${customer.customerName || 'customer'}`,
@@ -201,6 +208,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
           dueDate: customer.dueDates?.[0] ? `Due ${new Date(customer.dueDates[0]).toLocaleDateString()}` : 'No due date',
         })));
       }
+
       if (riskData?.flags) setRiskFlags(riskData.flags);
       if (failedRoutes > 0) setApiError('Live data is unavailable for some screens. Showing local data.');
     };
@@ -241,7 +249,7 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
   const weeklySales = transactions.slice(0, Math.min(transactions.length, 3)).reduce((sum, transaction) => sum + transaction.amount, 0);
   const monthlySales = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
 
-  const toggleTheme = () => setIsDarkMode(prev => !prev);
+  const toggleTheme = () => setIsDarkMode((prev) => !prev);
 
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
@@ -314,29 +322,8 @@ const [formData, setFormData] = useState<{ customer: string; item: string; amoun
     URL.revokeObjectURL(downloadUrl);
   };
 
-export default function GetStartedPage() {
-  const router = useRouter();
-
-  return (
-    <main className="min-h-screen bg-slate-100 text-slate-900">
-      <div className="mx-auto flex min-h-screen max-w-7xl flex-col lg:flex-row">
-        {/* Left side */}
-        <section className="relative flex min-h-[45vh] flex-1 flex-col justify-between overflow-hidden bg-blue-950 px-6 py-8 text-white sm:px-10 lg:min-h-screen lg:px-14 lg:py-10">
-          {/* Decorative shapes */}
-          <div className="absolute -right-24 top-20 h-64 w-64 rounded-full border-[3rem] border-amber-500/20" />
-          <div className="absolute -bottom-32 -left-24 h-80 w-80 rounded-full bg-blue-900/70" />
-          <div className="absolute right-20 top-40 h-4 w-4 rounded-full bg-amber-400 shadow-[0_0_0_10px_rgba(245,158,11,0.12)]" />
-
-          {/* Logo */}
-          <div className="relative z-10 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500 text-blue-950 shadow-lg">
-              <Mic size={22} strokeWidth={2.5} />
-            </div>
-
-  // 1. RECORD SCREEN
   const renderRecordScreen = () => (
     <div className="space-y-4">
-      {/* Profile Header */}
       <div className={`p-3.5 rounded-xl border flex items-center justify-between ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
         <div className="flex items-center gap-3">
           <div className="bg-amber-100 dark:bg-amber-900/40 p-2.5 rounded-full text-amber-600">
@@ -352,9 +339,8 @@ export default function GetStartedPage() {
         </span>
       </div>
 
-      {/* Voice Record Hero */}
       <div className="bg-blue-900 rounded-2xl p-6 text-center text-white flex flex-col items-center justify-center shadow-inner">
-        <button 
+        <button
           onClick={() => setIsRecording(!isRecording)}
           className={`w-20 h-20 rounded-full flex items-center justify-center transition-all transform active:scale-95 shadow-lg ${
             isRecording ? 'bg-red-500 ring-8 ring-red-400/30 animate-pulse' : 'bg-white text-blue-900 hover:bg-blue-50'
@@ -368,7 +354,11 @@ export default function GetStartedPage() {
         </p>
       </div>
 
-      {apiError && <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-800" role="status">{text('Live data is unavailable for some screens. Showing local data.', "Data y'okukola tebiriwo ku screen ezimu. Tulaga data ey'omu kitundu.", 'Data haiwezekani kwa baadhi ya skrini. Inaonyesha data ya ndani.', 'البيانات الفعلية غير متاحة لبعض الشاشات. يتم عرض البيانات المحلية.', 'Les données en direct ne sont pas disponibles sur certains écrans. Affichage des données locales.')}</p>}
+      {apiError && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-800" role="status">
+          {text('Live data is unavailable for some screens. Showing local data.', "Data y'okukola tebiriwo ku screen ezimu. Tulaga data ey'omu kitundu.", 'Data haiwezekani kwa baadhi ya skrini. Inaonyesha data ya ndani.', 'البيانات الفعلية غير متاحة لبعض الشاشات. يتم عرض البيانات المحلية.', 'Les données en direct ne sont pas disponibles sur certains écrans. Affichage des données locales.')}
+        </p>
+      )}
 
       <div className="relative flex items-center justify-center py-1">
         <div className="border-t border-slate-200 dark:border-slate-800 w-full"></div>
@@ -377,7 +367,6 @@ export default function GetStartedPage() {
         </span>
       </div>
 
-      {/* Manual Input Form */}
       <form onSubmit={handleSaveEntry} className="space-y-3">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
           <Edit3 size={14} />
@@ -394,34 +383,13 @@ export default function GetStartedPage() {
               type="text"
               placeholder={text('e.g. Nakato Grace or 0772…', 'eky. Nakato Grace oba 0772…', 'mfano: Nakato Grace au 0772…', 'مثال: نكاتو غريس أو 0772…', 'ex. Nakato Grace ou 0772…')}
               value={formData.customer}
-              onChange={(e) => setFormData({...formData, customer: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, customer: e.target.value })}
               className={`w-full pl-9 pr-3 py-2 text-sm rounded-lg border outline-none ${
                 isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300'
               }`}
             />
-            <div>
-              <p className="text-lg font-bold leading-none">DuukaTalk</p>
-              <p className="mt-1 text-xs font-medium text-blue-200">
-                Your shop, your story.
-              </p>
-            </div>
           </div>
-
-          {/* Main message */}
-          <div className="relative z-10 my-12 max-w-lg lg:my-0">
-            <p className="mb-5 text-sm font-semibold uppercase tracking-[0.22em] text-amber-400">
-              Simple books. Strong business.
-            </p>
-
-            <h1 className="text-4xl font-bold leading-tight sm:text-5xl xl:text-6xl">
-              Keep your business moving forward.
-            </h1>
-
-            <p className="mt-6 max-w-md text-base leading-7 text-blue-100 sm:text-lg">
-              Record sales, track debts, and understand your shop&apos;s
-              story in one friendly place.
-            </p>
-          </div>
+        </div>
 
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -433,7 +401,7 @@ export default function GetStartedPage() {
               type="text"
               placeholder={text('e.g. Kasooli 2kg, Amafuta 1L', 'eky. Kasooli 2kg, Amafuta 1L', 'mfano: Kasooli 2kg, Mafuta 1L', 'مثال: كاسولي 2 كجم، زيت 1 لتر', 'ex. Kasooli 2kg, huile 1L')}
               value={formData.item}
-              onChange={(e) => setFormData({...formData, item: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, item: e.target.value })}
               className={`w-full pl-9 pr-3 py-2 text-sm rounded-lg border outline-none ${
                 isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300'
               }`}
@@ -451,7 +419,7 @@ export default function GetStartedPage() {
               type="number"
               placeholder="0"
               value={formData.amount}
-              onChange={(e) => setFormData({...formData, amount: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
               className={`w-full pl-12 pr-3 py-2 text-sm font-semibold rounded-lg border outline-none ${
                 isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300'
               }`}
@@ -462,7 +430,7 @@ export default function GetStartedPage() {
         <div className="grid grid-cols-2 gap-3 pt-1">
           <button
             type="button"
-            onClick={() => setFormData({...formData, paymentType: 'cash'})}
+            onClick={() => setFormData({ ...formData, paymentType: 'cash' })}
             className={`py-2 px-3 rounded-lg border flex items-center justify-center gap-2 text-xs font-medium transition ${
               formData.paymentType === 'cash'
                 ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
@@ -473,7 +441,7 @@ export default function GetStartedPage() {
           </button>
           <button
             type="button"
-            onClick={() => setFormData({...formData, paymentType: 'credit'})}
+            onClick={() => setFormData({ ...formData, paymentType: 'credit' })}
             className={`py-2 px-3 rounded-lg border flex items-center justify-center gap-2 text-xs font-medium transition ${
               formData.paymentType === 'credit'
                 ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
@@ -495,10 +463,8 @@ export default function GetStartedPage() {
     </div>
   );
 
-  // 2. LEDGERS SCREEN
   const renderLedgersScreen = () => (
-<div className="space-y-4 relative min-h-[36.25rem]">
-      {/* Date Navigation & Controls */}
+    <div className="space-y-4 relative min-h-[36.25rem]">
       <div className="flex items-center justify-between gap-2">
         <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
           <ChevronLeft size={16} className="cursor-pointer text-slate-400 hover:text-slate-600" />
@@ -510,21 +476,20 @@ export default function GetStartedPage() {
         </button>
       </div>
 
-      {/* Time Filter Pills */}
       <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-medium">
-        <button 
+        <button
           onClick={() => setTimeframe('daily')}
           className={`py-1.5 rounded-lg transition ${timeframe === 'daily' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-900 dark:text-white font-bold' : 'text-slate-500'}`}
         >
           {text('Daily', 'Leero', 'Kila siku', 'يومياً', 'Quotidien')}
         </button>
-        <button 
+        <button
           onClick={() => setTimeframe('weekly')}
           className={`py-1.5 rounded-lg transition ${timeframe === 'weekly' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-900 dark:text-white font-bold' : 'text-slate-500'}`}
         >
           {text('Weekly', 'Sabiti', 'Kila wiki', 'أسبوعياً', 'Hebdomadaire')}
         </button>
-        <button 
+        <button
           onClick={() => setTimeframe('monthly')}
           className={`py-1.5 rounded-lg transition ${timeframe === 'monthly' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-900 dark:text-white font-bold' : 'text-slate-500'}`}
         >
@@ -532,12 +497,11 @@ export default function GetStartedPage() {
         </button>
       </div>
 
-      {/* Overview Inflows Card */}
       <div className="bg-linear-to-br from-blue-900 to-blue-950 rounded-2xl p-4 text-white shadow-md">
         <div className="flex justify-between items-start">
           <div>
             <span className="text-[11px] text-blue-200 uppercase font-semibold tracking-wider">{text('Total inflows', 'Ebyakolwa', 'Mapato ya jumla', 'إجمالي التدفقات', 'Total des entrées')}</span>
-            <div className="text-2xl font-extrabold mt-0.5">UGX {(summary?.totalSales || transactions.filter((transaction) => transaction.type === 'cash').reduce((total, transaction) => total + transaction.amount, 0)).toLocaleString()}</div>
+            <div className="text-2xl font-extrabold mt-0.5">UGX {(summary?.totalSales || cashSales).toLocaleString()}</div>
           </div>
           <span className="inline-flex items-center text-xs font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
             <TrendingUp size={12} className="mr-1" /> +14%
@@ -546,7 +510,7 @@ export default function GetStartedPage() {
         <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-blue-800/60 text-xs">
           <div>
             <span className="text-blue-300 text-[11px]">{text('Cash in Hand', 'Ssente eziri mu ngalo', 'Fedha mkononi', 'النقد في اليد', 'Espèces en main')}</span>
-            <p className="font-bold text-sm">UGX {(summary?.totalSales || transactions.filter((transaction) => transaction.type === 'cash').reduce((total, transaction) => total + transaction.amount, 0)).toLocaleString()}</p>
+            <p className="font-bold text-sm">UGX {cashSales.toLocaleString()}</p>
           </div>
           <div>
             <span className="text-blue-300 text-[11px]">{text('Credit Given', 'Amabanja agawereddwa', 'Deni iliyotolewa', 'الائتمان الممنوح', 'Crédit accordé')}</span>
@@ -554,66 +518,44 @@ export default function GetStartedPage() {
           </div>
         </div>
       </div>
-          {/* Footer */}
-          <p className="relative z-10 text-xs text-blue-300">
-            © 2025 DuukaTalk · Made for local businesses
-          </p>
-        </section>
 
-        {/* Right side */}
-        <section className="flex flex-1 items-center justify-center bg-white px-6 py-12 sm:px-10 lg:min-h-screen lg:px-16">
-          <div className="w-full max-w-lg">
-            {/* Mobile logo */}
-            <div className="mb-10 flex items-center gap-3 lg:hidden">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-blue-950">
-                <Mic size={20} strokeWidth={2.5} />
-              </div>
+      <div className="relative">
+        <Search size={16} className="absolute left-3 top-3 text-slate-400" />
+        <input
+          type="text"
+          placeholder={text('Search customer or item…', 'Noonya omuguzi oba ekyaguddwa…', 'Tafuta mteja au bidhaa…', 'ابحث عن العميل أو العنصر…', 'Rechercher client ou article…')}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className={`w-full pl-9 pr-9 py-2.5 text-xs rounded-xl border outline-none ${
+            isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 placeholder-slate-400'
+          }`}
+        />
+        <Mic size={16} className="absolute right-3 top-3 text-amber-500 cursor-pointer" />
+      </div>
 
-              <div>
-                <p className="font-bold text-blue-950">DuukaTalk</p>
-                <p className="text-xs text-slate-500">
-                  Your shop, your story.
-                </p>
-              </div>
-            </div>
+      <div>
+        <div className="flex justify-between items-center mb-2 px-1">
+          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{text('Transactions', 'Ebintu Ebyakozesebwa')}</span>
+          <span className="text-[11px] text-slate-400">{text('Sorted by recent', 'Bisengekeddwa okusinziira ku bipya')}</span>
+        </div>
 
-            <div className="mb-10">
-              <p className="mb-3 text-sm font-semibold text-amber-600">
-                Welcome to DuukaTalk
-              </p>
-
-              <h2 className="text-3xl font-bold tracking-tight text-blue-950 sm:text-4xl">
-                Your business, made simpler.
-              </h2>
-
-              <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">
-                Keep track of your sales and customer debts without the
-                stress of complicated bookkeeping.
-              </p>
-            </div>
-
-            {/* Features */}
-            <div className="space-y-4">
-              <div className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-900">
-                  <Mic size={20} />
+        <div className="space-y-2">
+          {filteredTransactions.map((tx) => (
+            <div key={tx.id} className={`p-3 rounded-xl border flex items-center justify-between ${isDarkMode ? 'bg-slate-800/60 border-slate-700/60' : 'bg-white border-slate-100 shadow-sm'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
+                  {tx.initials}
                 </div>
-
                 <div>
-                  <h3 className="font-semibold text-slate-900">
-                    Record with your voice
-                  </h3>
-                  <p className="mt-1 text-sm leading-5 text-slate-500">
-                    Speak naturally and let DuukaTalk help record your
-                    transactions.
-                  </p>
+                  <h4 className="text-xs font-bold">{tx.customer}</h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">{tx.item}</p>
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-xs font-bold">UGX {tx.amount.toLocaleString()}</div>
                 <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold mt-0.5 ${
-                  tx.type === 'cash' 
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
+                  tx.type === 'cash'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                     : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                 }`}>
                   {tx.type === 'cash' ? text('Cash', 'Ensimbi', 'Pesa', 'نقد', 'Espèces') : text(tx.dueDate || 'Due soon', 'Due soon', 'Inakuja hivi karibuni', 'قريبًا', 'Bientôt')}
@@ -625,14 +567,12 @@ export default function GetStartedPage() {
         </div>
       </div>
 
-      {/* Floating Action Button */}
       <button className="absolute bottom-2 right-2 w-12 h-12 bg-amber-500 text-slate-950 rounded-full flex items-center justify-center shadow-lg hover:bg-amber-400 transition">
         <Mic size={22} />
       </button>
     </div>
   );
 
-  // 3. DEBTS & DUES SCREEN
   const overLimitDebts = debts.filter((debt) => debt.amount > DEBT_LIMIT);
 
   const renderDebtsScreen = () => (
@@ -653,7 +593,6 @@ export default function GetStartedPage() {
         </div>
       )}
 
-      {/* Debts Summary Card */}
       <div className="bg-amber-500 rounded-2xl p-4 text-slate-950 shadow-md">
         <div className="flex justify-between items-start">
           <div>
@@ -672,41 +611,37 @@ export default function GetStartedPage() {
         </button>
       </div>
 
-              <div className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-                  <BookOpen size={20} />
-                </div>
-
+      <div className="space-y-2.5">
+        {debts.map((debt) => (
+          <div key={debt.id} className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className="flex justify-between items-start">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">{debt.initials}</div>
                 <div>
-                  <h3 className="font-semibold text-slate-900">
-                    Keep your ledger organized
-                  </h3>
-                  <p className="mt-1 text-sm leading-5 text-slate-500">
-                    See your sales and customer debts in one simple ledger.
-                  </p>
+                  <h4 className="text-xs font-bold">{debt.customer}</h4>
+                  <p className="text-[11px] text-slate-500">{debt.item}</p>
                 </div>
               </div>
+              <div className="text-right">
+                <span className="text-xs font-bold text-amber-600 dark:text-amber-400">UGX {debt.amount.toLocaleString()}</span>
+                <p className="text-[10px] text-red-500 font-semibold">{debt.dueDate}</p>
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-xs font-bold text-amber-600 dark:text-amber-400">UGX {debt.amount.toLocaleString()}</span>
-              <p className="text-[10px] text-red-500 font-semibold">{debt.dueDate}</p>
+            <div className="flex gap-2 mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/50">
+              <button onClick={() => setDebts((currentDebts) => currentDebts.filter((currentDebt) => currentDebt.id !== debt.id))} className="flex-1 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1">
+                <CheckCircle size={12} /> {text('Mark Paid', 'Kiteekeddwaako ssente', 'Weka Kulipwa', 'تحديد كمدفوع', 'Marqué payé')}
+              </button>
+              <button className="px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1 text-slate-600 dark:text-slate-300">
+                <Phone size={12} /> {text('Call', 'Kuba essimu', 'Piga simu', 'اتصال', 'Appel')}
+              </button>
             </div>
           </div>
-          <div className="flex gap-2 mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/50">
-            <button onClick={() => setDebts((currentDebts) => currentDebts.filter((currentDebt) => currentDebt.id !== debt.id))} className="flex-1 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1">
-              <CheckCircle size={12} /> {text('Mark Paid', 'Kiteekeddwaako ssente', 'Weka Kulipwa', 'تحديد كمدفوع', 'Marqué payé')}
-            </button>
-            <button className="px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1 text-slate-600 dark:text-slate-300">
-              <Phone size={12} /> {text('Call', 'Kuba essimu', 'Piga simu', 'اتصال', 'Appel')}
-            </button>
-          </div>
-        </div>)}
+        ))}
         {debts.length === 0 && <p className="py-6 text-center text-xs text-slate-500">{text('All debts are settled.', 'Amabanja gonna gasasuddwa.', 'Deni zote zamelipwa.', 'تم سداد جميع الديون.', 'Toutes les dettes sont réglées.')}</p>}
       </div>
     </div>
   );
 
-  // 4. REPORTS SCREEN
   const renderReportsScreen = () => (
     <div className="space-y-4 bg-[#eaf0f7] p-3 rounded-[18px]">
       <div className="flex items-center justify-between rounded-2xl bg-[#edf1f6] px-2 py-1.5">
@@ -829,8 +764,6 @@ export default function GetStartedPage() {
   return (
     <div className={`min-h-screen flex justify-center items-center ${isDarkMode ? 'bg-gray-950 text-white' : 'bg-slate-100 text-slate-800'}`}>
       <div className={`w-full max-w-md min-h-screen sm:min-h-0 sm:h-[52.5rem] sm:rounded-3xl shadow-2xl flex flex-col justify-between overflow-hidden relative ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-        
-        {/* App Header */}
         <header className="bg-blue-900 text-white px-5 py-4 shadow-md">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
@@ -961,22 +894,25 @@ export default function GetStartedPage() {
           </div>
         </header>
 
-        {/* Dynamic View Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {riskFlags.length > 0 && <div className="space-y-2" role="alert">
-            {riskFlags.map((flag, index) => <div key={`${flag.type}-${index}`} className={`rounded-lg px-3 py-2 text-xs font-medium ${flag.type === 'credit_risk' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800'}`}>
-              {flag.message}
-            </div>)}
-          </div>}
+          {riskFlags.length > 0 && (
+            <div className="space-y-2" role="alert">
+              {riskFlags.map((flag, index) => (
+                <div key={`${flag.type}-${index}`} className={`rounded-lg px-3 py-2 text-xs font-medium ${flag.type === 'credit_risk' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800'}`}>
+                  {flag.message}
+                </div>
+              ))}
+            </div>
+          )}
+
           {activeTab === 'record' && renderRecordScreen()}
           {activeTab === 'ledgers' && renderLedgersScreen()}
           {activeTab === 'debts' && renderDebtsScreen()}
           {activeTab === 'reports' && renderReportsScreen()}
         </div>
 
-        {/* Bottom Navigation */}
         <nav className={`border-t flex justify-around py-2 px-1 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <button 
+          <button
             onClick={() => setActiveTab('record')}
             className={`flex flex-col items-center gap-1 py-1 px-3 rounded-lg text-xs font-medium transition ${
               activeTab === 'record' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 hover:text-slate-600'
@@ -986,7 +922,7 @@ export default function GetStartedPage() {
             <span>{text('Record', 'Wandiika', 'Rekodi', 'تسجيل', 'Enregistrer')}</span>
           </button>
 
-          <button 
+          <button
             onClick={() => setActiveTab('ledgers')}
             className={`flex flex-col items-center gap-1 py-1 px-3 rounded-lg text-xs font-medium transition ${
               activeTab === 'ledgers' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 hover:text-slate-600'
@@ -996,7 +932,7 @@ export default function GetStartedPage() {
             <span>{text('Ledgers', 'Ebitabo', 'Vitabu', 'دفاتر', 'Livres')}</span>
           </button>
 
-          <button 
+          <button
             onClick={() => setActiveTab('debts')}
             className={`flex flex-col items-center gap-1 py-1 px-3 rounded-lg text-xs font-medium transition ${
               activeTab === 'debts' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 hover:text-slate-600'
@@ -1006,7 +942,7 @@ export default function GetStartedPage() {
             <span>{text('Debts & Dues', 'Amabanja', 'Deni na Madeni', 'الديون', 'Dettes')}</span>
           </button>
 
-          <button 
+          <button
             onClick={() => setActiveTab('reports')}
             className={`flex flex-col items-center gap-1 py-1 px-3 rounded-lg text-xs font-medium transition ${
               activeTab === 'reports' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 hover:text-slate-600'
@@ -1016,39 +952,7 @@ export default function GetStartedPage() {
             <span>{text('Reports', 'Ripoota', 'Ripoti', 'التقارير', 'Rapports')}</span>
           </button>
         </nav>
-
-              <div className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-                  <BarChart3 size={20} />
-                </div>
-
-                <div>
-                  <h3 className="font-semibold text-slate-900">
-                    Understand your business
-                  </h3>
-                  <p className="mt-1 text-sm leading-5 text-slate-500">
-                    Get a clear view of sales and outstanding credit.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Get Started button */}
-            <button
-              type="button"
-              onClick={() => router.push('/login')}
-              className="mt-8 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-blue-900 px-6 text-sm font-bold text-white shadow-lg shadow-blue-950/15 transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-900/20"
-            >
-              Get Started
-              <ArrowRight size={19} />
-            </button>
-
-            <p className="mt-5 text-center text-xs text-slate-400">
-              Create an account or log in to continue.
-            </p>
-          </div>
-        </section>
       </div>
-    </main>
+    </div>
   );
 }

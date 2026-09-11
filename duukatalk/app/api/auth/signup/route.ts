@@ -31,9 +31,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await signupVendor({ pin, businessName, ownerName, phone });
+    const result = await signupVendor({ pin, businessName, ownerName, phone });
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({
+      success: true,
+      vendorId: result.vendorId,
+      businessName,
+    }, { status: 200 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("signup error:", message);

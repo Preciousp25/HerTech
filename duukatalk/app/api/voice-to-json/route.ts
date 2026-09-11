@@ -159,6 +159,16 @@ export async function POST(
       timestamp
     );
 
+    if (!db) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Database is not configured",
+        },
+        { status: 503 }
+      );
+    }
+
     // --------------------------------------------------
     // 8. Create Firestore document reference
     // --------------------------------------------------

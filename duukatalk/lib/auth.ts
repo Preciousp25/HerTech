@@ -17,6 +17,9 @@ const VENDOR_COUNTER_DOC = "vendor_id_counter";
 const MAX_PIN_ATTEMPTS = 3;
 const LOCKOUT_DURATION_MS = 60 * 60 * 1000;
 
+const MEMORY_VENDOR_STORE = new Map<string, VendorRecord>();
+let memoryCounter = 0;
+
 export interface VendorRecord {
   vendorId: string;
   hashedPin: string;
@@ -65,14 +68,20 @@ function isValidPinFormat(pin: string): boolean {
 }
 
 async function getNextVendorId(): Promise<string> {
+  if (!db) {
+    memoryCounter += 1;
+    return `vendor_${String(memoryCounter).padStart(3, "0")}`;
+  }
+
+  const firestoreDb = db;
   const counterRef = doc(
-    db,
+    firestoreDb,
     COUNTERS_COLLECTION,
     VENDOR_COUNTER_DOC
   );
 
   const nextNumber = await runTransaction(
-    db,
+    firestoreDb,
     async (transaction) => {
       const counterSnap = await transaction.get(counterRef);
 
@@ -100,8 +109,19 @@ async function findVendorByBusinessName(
 ): Promise<VendorRecord | null> {
   const businessNameLower = businessName.trim().toLowerCase();
 
+  if (!db) {
+    for (const record of MEMORY_VENDOR_STORE.values()) {
+      if (record.businessNameLower === businessNameLower) {
+        return record;
+      }
+    }
+
+    return null;
+  }
+
+  const firestoreDb = db;
   const q = query(
-    collection(db, VENDORS_COLLECTION),
+    collection(firestoreDb, VENDORS_COLLECTION),
     where(
       "businessNameLower",
       "==",
@@ -166,9 +186,18 @@ export async function signupVendor(params: {
     updatedAt: now,
   };
 
-  await runTransaction(db, async (transaction) => {
+  if (!db) {
+    MEMORY_VENDOR_STORE.set(vendorId, record);
+    return {
+      success: true,
+      vendorId,
+    };
+  }
+
+  const firestoreDb = db;
+  await runTransaction(firestoreDb, async (transaction) => {
     const vendorRef = doc(
-      db,
+      firestoreDb,
       VENDORS_COLLECTION,
       vendorId
     );
@@ -206,8 +235,29 @@ export async function loginVendor(
     };
   }
 
+  if (!db) {
+    const localPinMatches = hashPin(pin) === record.hashedPin;
+
+    if (!localPinMatches) {
+      return {
+        success: false,
+        error: "Incorrect PIN.",
+        attemptsRemaining: 0,
+      };
+    }
+
+    return {
+      success: true,
+      vendorId: record.vendorId,
+      businessName: record.businessName,
+      ownerName: record.ownerName,
+      phone: record.phone,
+    };
+  }
+
+  const firestoreDb = db;
   const vendorRef = doc(
-    db,
+    firestoreDb,
     VENDORS_COLLECTION,
     record.vendorId
   );

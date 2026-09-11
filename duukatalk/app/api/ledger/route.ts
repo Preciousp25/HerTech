@@ -18,6 +18,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (!db) {
+      return NextResponse.json(
+        { error: "Database is not configured" },
+        { status: 503 }
+      );
+    }
+
     // Fetch only transactions belonging to this vendor.
     // Firestore uses "vendor_id" as the field name.
     const transactionsQuery = query(

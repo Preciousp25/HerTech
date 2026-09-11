@@ -51,6 +51,10 @@ export function toFirestoreTransaction(
  * Builds a spoken-friendly summary of today's transactions.
  */
 export async function buildDailySummary(vendorId: string): Promise<string> {
+  if (!db) {
+    return "Database is not configured yet.";
+  }
+
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
