@@ -77,6 +77,14 @@ interface ApiTransaction {
 interface ApiSummary {
   totalSales?: number;
   totalCreditOutstanding?: number;
+  recommendedSavings?: number;
+  savingsPercent?: number;
+  loanReadinessScore?: number;
+  loanAdvice?: string;
+  creditToSalesRatio?: number;
+  creditSharePercent?: number;
+  shouldStopLending?: boolean;
+  perCustomerCredit?: Record<string, number>;
 }
 
 interface ApiCreditCustomer {
@@ -272,7 +280,7 @@ export default function DuukaTalkApp() {
   const loadApiData = useCallback(async () => {
     const responses = await Promise.allSettled([
       fetch('/api/ledger'),
-      fetch('/api/summary'),
+      fetch(`/api/summary?language=${language}`),
       fetch('/api/credit'),
       fetch(`/api/risk?language=${language}`),
     ]);
@@ -417,6 +425,14 @@ export default function DuukaTalkApp() {
       return;
     }
     const customerName = formData.customer.trim();
+    if (formData.paymentType === 'credit' && (summary?.perCustomerCredit?.[customerName] ?? 0) >= CREDIT_LIMIT) {
+      const warn = text(
+        `Warning: ${customerName} already has UGX ${(summary?.perCustomerCredit?.[customerName] ?? 0).toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Pause new lending and recover cash first.`,
+        `Okulabula: ${customerName} alina amabanja agasigadde UGX ${(summary?.perCustomerCredit?.[customerName] ?? 0).toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Lekeka okukuza obulava obupya era funya ssente.`,
+      );
+      setFormMessage(warn);
+      return;
+    }
     const newTransaction: Transaction = {
       id: crypto.randomUUID(),
       customer: customerName,
@@ -475,7 +491,7 @@ export default function DuukaTalkApp() {
     saveLocally(false);
     setFormMessage(
       newTransaction.type === 'credit'
-        ? text("Entry saved. A reminder SMS will be sent if Africa's Talking is configured.", "Ekiwandiiko kiteekeddwa. SMS ejja kuweerezebwa singa Africa's Talking etegekeddwa.")
+        ? text("Entry saved. The customer and vendor will get an SMS if Africa's Talking is configured — including credit-limit and other vendor alerts.", "Ekiwandiiko kiteekeddwa. Omuguzi n'akatale bajja kufuna SMS singa Africa's Talking etegekeddwa, nga mwotadde n'ekkomo ly'omubanja n'obulabirizi.")
         : text('Entry saved to your ledger.', 'Ekiwandiiko kiteekeddwa mu bitabo byo.')
     );
   };
@@ -538,6 +554,14 @@ export default function DuukaTalkApp() {
       const itemParts = [quantity, voiceTx.unit, voiceTx.item].filter((p): p is string | number => p !== null && p !== undefined && p !== '');
       const itemLabel = itemParts.length > 0 ? itemParts.join(' ') : text('Recorded item', 'Ekintu ekiwandiikiddwa');
       const paymentType: Transaction['type'] = voiceTx.paymentType === 'credit' ? 'credit' : 'cash';
+      if (paymentType === 'credit' && (summary?.perCustomerCredit?.[customerName] ?? 0) >= CREDIT_LIMIT) {
+        setMicError(text(
+          `Warning: ${customerName} already has UGX ${(summary?.perCustomerCredit?.[customerName] ?? 0).toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Pause new lending and recover cash first.`,
+          `Okulabula: ${customerName} alina amabanja agasigadde UGX ${(summary?.perCustomerCredit?.[customerName] ?? 0).toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Lekeka okukuza obulava obupya era funya ssente.`,
+        ));
+        setIsProcessing(false);
+        return;
+      }
       const dueDateLabel = safeFormatDate(voiceTx.dueDate);
       const newTransaction: Transaction = {
         id: crypto.randomUUID(), customer: customerName, initials: deriveInitials(customerName),
@@ -768,6 +792,20 @@ export default function DuukaTalkApp() {
           <span className="text-[10px] text-blue-600 font-semibold">{text('8 customers paid', 'Abaguzi 8 basasudde')}</span>
         </div>
       </div>
+
+      <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-bold mb-3">{text('Savings & loan readiness', 'Okuterekera n\'okufuna olwanji')}</h4>
+          <span className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold">{summary?.loanReadinessScore ?? 60}%</span>
+        </div>
+        <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden mb-2">
+          <div className="bg-emerald-600 h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, summary?.loanReadinessScore ?? 60))}%` }}></div>
+        </div>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">{text('Recommended savings target:', 'Ekigendererwa eky\'okuterekera:')}</p>
+        <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300 mt-1">UGX {(summary?.recommendedSavings || Math.round(((summary?.totalSales || 0) * (summary?.savingsPercent || 10)) / 100)).toLocaleString()}</p>
+        <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-2 leading-snug">{summary?.loanAdvice || text('Save 10% of sales to improve your ability to qualify for a bank loan.', 'Tereka 10% ku magoba okuzimba omutindo gw\'okuyamba okufuna olwanji lwa bank.')}</p>
+      </div>
+
       <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
         <h4 className="text-xs font-bold mb-3">{text('Top Selling Items', 'Ebisinga okutundibwa')}</h4>
         <div className="space-y-3">

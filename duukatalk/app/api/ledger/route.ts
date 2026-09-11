@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { collection, doc, getDocs, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { toFirestoreTransaction } from "@/lib/firestore-transaction";
 import { notifyAfterTransaction } from "@/lib/notify-transaction";
 import { updateCustomerCredit } from "@/lib/updateCustomerCredit";
 import { getNextTransactionId } from "@/lib/transaction-id";
+import { localize, parseLanguage } from "@/lib/risk-flags";
+import { CREDIT_LIMIT } from "@/lib/credit";
 
 export async function GET() {
   try {
@@ -36,6 +38,7 @@ export async function POST(request: NextRequest) {
       payment_type?: "cash" | "credit";
       dueDate?: string | null;
       phone?: string | null;
+      language?: string;
     };
 
     const customer = (body.customer ?? body.customer_name)?.trim();
@@ -49,6 +52,29 @@ export async function POST(request: NextRequest) {
         { error: "customer, item, and a positive amount are required" },
         { status: 400 }
       );
+    }
+
+    const language = parseLanguage(body.language);
+
+    if (paymentType === "credit") {
+      const customerRef = doc(db, "customers", customer);
+      const customerSnap = await getDoc(customerRef);
+      const outstandingCredit = customerSnap.exists()
+        ? Number(customerSnap.data().outstanding_credit || 0)
+        : 0;
+
+      if (outstandingCredit >= CREDIT_LIMIT) {
+        return NextResponse.json(
+          {
+            error: localize(
+              language,
+              `Warning: ${customer} already has UGX ${outstandingCredit.toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Pause new lending and recover cash first.`,
+              `Okulabula: ${customer} alina amabanja agasigadde UGX ${outstandingCredit.toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Lekeka okukuza obulava obupya era funya ssente.`,
+            ),
+          },
+          { status: 409 },
+        );
+      }
     }
 
     const transactionId = await getNextTransactionId();
@@ -86,6 +112,7 @@ export async function POST(request: NextRequest) {
       dueDate: firestoreTransaction.due_date,
       outstandingCredit,
       customerPhone: body.phone,
+      language: parseLanguage(body.language),
     });
 
     return NextResponse.json(

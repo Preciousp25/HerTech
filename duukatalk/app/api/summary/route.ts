@@ -1,10 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { isOutstandingCredit } from "@/lib/credit";
+import {
+  buildLoanGuidance,
+  isOutstandingCredit,
+  parseGuidanceLanguage,
+} from "@/lib/credit";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
 	try {
+		const language = parseGuidanceLanguage(request.nextUrl.searchParams.get("language"));
 		const snapshot = await getDocs(collection(db, "transactions"));
 		const transactions = snapshot.docs.map((doc) => doc.data());
 
@@ -27,10 +32,19 @@ export async function GET() {
 			}
 		}
 
+		const guidance = buildLoanGuidance(totalSales, totalCreditOutstanding, language);
+
 		return NextResponse.json({
 			totalSales,
 			totalCreditOutstanding,
 			perCustomerCredit,
+			recommendedSavings: guidance.recommendedSavings,
+			savingsPercent: guidance.savingsPercent,
+			loanReadinessScore: guidance.loanReadinessScore,
+			loanAdvice: guidance.loanAdvice,
+			creditToSalesRatio: guidance.creditToSalesRatio,
+			creditSharePercent: guidance.creditSharePercent,
+			shouldStopLending: guidance.shouldStopLending,
 		});
 	} catch (error) {
 		console.error("Failed to fetch transaction summary:", error);
