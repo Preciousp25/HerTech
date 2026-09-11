@@ -1,7 +1,7 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { FormEvent, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowRight,
   Eye,
@@ -11,11 +11,13 @@ import {
   Mic,
   Store,
 } from 'lucide-react';
-
-const LANGUAGE_KEY = 'duukaTalkLanguage';
+import {
+  LANGUAGE_OPTIONS,
+  Language,
+  translate,
+} from '@/lib/i18n';
 
 type AuthMode = 'signup' | 'login';
-type Language = 'EN' | 'LUG' | 'SW' | 'AR' | 'FR';
 
 interface AuthApiResponse {
   success: boolean;
@@ -30,9 +32,15 @@ interface AuthApiResponse {
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [mode, setMode] = useState<AuthMode>('signup');
-  const [language, setLanguage] = useState<Language>('MIX');
+  const modeParam = searchParams.get('mode');
+
+  const [mode, setMode] = useState<AuthMode>(
+    modeParam === 'login' ? 'login' : 'signup',
+  );
+
+  const [language, setLanguage] = useState<Language>('EN');
   const [businessName, setBusinessName] = useState('');
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -42,15 +50,42 @@ export default function LoginPage() {
 
   const isSignup = mode === 'signup';
 
-  const text = (english: string, luganda: string) =>
-    language === 'EN'
-      ? english
-      : language === 'LUG'
-        ? luganda
-        : `${english} · ${luganda}`;
+  /*
+   * Keep the local mode in sync with the URL.
+   *
+   * This is important because after signup we navigate to:
+   * /login?mode=login
+   */
+  useEffect(() => {
+    const nextMode: AuthMode =
+      searchParams.get('mode') === 'login' ? 'login' : 'signup';
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMode(nextMode);
+  }, [searchParams]);
+
+  useEffect(() => {
+    const savedLanguage = window.localStorage.getItem('duukatalk-language');
+
+    if (
+      savedLanguage &&
+      LANGUAGE_OPTIONS.some(
+        (option) => option.value === savedLanguage,
+      )
+    ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLanguage(savedLanguage as Language);
+    }
+  }, []);
+
+  const text = (english: string, legacyLuganda?: string) => {
+    void legacyLuganda;
+    return translate(language, english);
+  };
 
   const formatLockoutMessage = (lockedUntil: string): string => {
     const unlockDate = new Date(lockedUntil);
+
     const timeLabel = unlockDate.toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
@@ -62,7 +97,9 @@ export default function LoginPage() {
     );
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault();
 
     setError('');
@@ -125,10 +162,8 @@ export default function LoginPage() {
           ),
         );
 
-        // Switch to login mode after successful signup.
-        setMode('login');
-        setPin('');
-
+        // Move to login mode after account creation.
+        router.replace('/login?mode=login');
         return;
       }
 
@@ -175,7 +210,22 @@ export default function LoginPage() {
       }
 
       // Login was successful.
-      // The API should return the authenticated vendorId.
+      window.localStorage.setItem(
+        'duukatalk-user',
+        JSON.stringify({
+          vendorId: data.vendorId,
+          businessName:
+            data.businessName || businessName.trim(),
+          ownerName: data.ownerName || '',
+          phone: data.phone || '',
+        }),
+      );
+
+      window.localStorage.setItem(
+        'duukatalk-language',
+        language,
+      );
+
       console.log('Vendor logged in:', {
         vendorId: data.vendorId,
         businessName: data.businessName,
@@ -199,6 +249,13 @@ export default function LoginPage() {
     setMode(nextMode);
     setError('');
     setMessage('');
+
+    const url =
+      nextMode === 'login'
+        ? '/login?mode=login'
+        : '/login?mode=signup';
+
+    router.replace(url);
   };
 
   return (
@@ -214,7 +271,9 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <p className="text-lg font-bold leading-none">DuukaTalk</p>
+            <p className="text-lg font-bold leading-none">
+              DuukaTalk
+            </p>
             <p className="mt-1 text-xs font-medium text-blue-200">
               {text(
                 'Your shop, your story.',
@@ -269,11 +328,6 @@ export default function LoginPage() {
       <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-md">
           <div className="mb-6 flex justify-end">
-            <label className="sr-only" htmlFor="login-language-mode">{text('Language', 'Lulimi', 'Lugha', 'اللغة', 'Langue')}</label>
-            <select
-              id="login-language-mode"
-              value={language}
-              onChange={(event) => handleLanguageChange(event.target.value as Language)}
             <label
               className="sr-only"
               htmlFor="login-language-mode"
@@ -284,16 +338,27 @@ export default function LoginPage() {
             <select
               id="login-language-mode"
               value={language}
-              onChange={(event) =>
-                setLanguage(event.target.value as Language)
-              }
+              onChange={(event) => {
+                const nextLanguage =
+                  event.target.value as Language;
+
+                setLanguage(nextLanguage);
+
+                window.localStorage.setItem(
+                  'duukatalk-language',
+                  nextLanguage,
+                );
+              }}
               className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-blue-600"
             >
-              <option value="EN">English</option>
-              <option value="LUG">Luganda</option>
-              <option value="SW">Kiswahili</option>
-              <option value="AR">العربية</option>
-              <option value="FR">Français</option>
+              {LANGUAGE_OPTIONS.map((option) => (
+                <option
+                  key={option.value}
+                  value={option.value}
+                >
+                  {option.label}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -303,7 +368,9 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <p className="font-bold text-blue-950">DuukaTalk</p>
+              <p className="font-bold text-blue-950">
+                DuukaTalk
+              </p>
               <p className="text-xs text-slate-500">
                 {text(
                   'Your shop, your story.',
@@ -316,14 +383,23 @@ export default function LoginPage() {
           <div className="mb-8">
             <p className="mb-3 text-sm font-semibold text-amber-600">
               {isSignup
-                ? text('Welcome to DuukaTalk', 'Tuyambalidde DuukaTalk')
+                ? text(
+                    'Welcome to DuukaTalk',
+                    'Tuyambalidde DuukaTalk',
+                  )
                 : text('Welcome back', 'Tuyanjula')}
             </p>
 
             <h2 className="text-3xl font-bold tracking-tight text-blue-950 sm:text-4xl">
               {isSignup
-                ? text('Set up your shop.', 'Tegeka akatale ko.')
-                : text('Log in to your shop.', 'Yingira mu katale ko.')}
+                ? text(
+                    'Set up your shop.',
+                    'Tegeka akatale ko.',
+                  )
+                : text(
+                    'Log in to your shop.',
+                    'Yingira mu katale ko.',
+                  )}
             </h2>
 
             <p className="mt-3 text-sm leading-6 text-slate-500">
@@ -349,7 +425,7 @@ export default function LoginPage() {
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              {text('Sign up', 'Wandiise', 'Jisajili', 'إنشاء حساب', 'S\'inscrire')}
+              {text('Sign up', 'Wandiise')}
             </button>
 
             <button
@@ -361,7 +437,7 @@ export default function LoginPage() {
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              {text('Log in', 'Yingira', 'Ingia', 'تسجيل الدخول', 'Se connecter')}
+              {text('Log in', 'Yingira')}
             </button>
           </div>
 
@@ -455,8 +531,6 @@ export default function LoginPage() {
 
                 <button
                   type="button"
-                  onClick={() => setShowPin((visible) => !visible)}
-                  aria-label={showPin ? text('Hide PIN', 'Kisa PIN', 'Ficha PIN', 'إخفاء PIN', 'Masquer le PIN') : text('Show PIN', 'Laga PIN', 'Onyesha PIN', 'إظهار PIN', 'Afficher le PIN')}
                   onClick={() =>
                     setShowPin((visible) => !visible)
                   }
@@ -520,7 +594,6 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-8 text-center text-xs leading-5 text-slate-400">
-            {text('By continuing, you agree to keep your account details safe and private.', 'Bw’ogenda mu maaso, okiraba obuterevu mu kukiika ebikwata ku akaawunti yo.', 'Kwa kuendelea, unakubali kuweka maelezo ya akaunti yako salama na faragha.', 'بالمتابعة، أنت توافق على الحفاظ على تفاصيل حسابك آمنة وخاصة.', 'En continuant, vous acceptez de garder les détails de votre compte sécurisés et privés.')}
             {text(
               'By continuing, you agree to keep your account details safe and private.',
               'Bw’ogenda mu maaso, okiraba obuterevu mu kukiika ebikwata ku akaawunti yo.',

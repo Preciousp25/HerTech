@@ -29,6 +29,7 @@ export interface VoiceToJsonSuccess {
   success: true;
   transcript: string;
   transaction: Transaction;
+  transactionId: string;
 }
 
 /**
@@ -81,7 +82,11 @@ export function validateExtractedFields(value: unknown): ExtractedFields {
 
   const obj = value as Record<string, unknown>;
 
-  if (obj.item !== null && obj.item !== undefined && typeof obj.item !== "string") {
+  if (
+    obj.item !== null &&
+    obj.item !== undefined &&
+    typeof obj.item !== "string"
+  ) {
     throw new Error("Invalid 'item'");
   }
 
@@ -93,7 +98,11 @@ export function validateExtractedFields(value: unknown): ExtractedFields {
     throw new Error("Invalid 'quantity'");
   }
 
-  if (obj.unit !== null && obj.unit !== undefined && typeof obj.unit !== "string") {
+  if (
+    obj.unit !== null &&
+    obj.unit !== undefined &&
+    typeof obj.unit !== "string"
+  ) {
     throw new Error("Invalid 'unit'");
   }
 
@@ -119,10 +128,16 @@ export function validateExtractedFields(value: unknown): ExtractedFields {
     obj.paymentType !== "cash" &&
     obj.paymentType !== "credit"
   ) {
-    throw new Error("Invalid 'paymentType', must be 'cash', 'credit', or null");
+    throw new Error(
+      "Invalid 'paymentType', must be 'cash', 'credit', or null"
+    );
   }
 
-  if (obj.dueDate !== null && obj.dueDate !== undefined && typeof obj.dueDate !== "string") {
+  if (
+    obj.dueDate !== null &&
+    obj.dueDate !== undefined &&
+    typeof obj.dueDate !== "string"
+  ) {
     throw new Error("Invalid 'dueDate'");
   }
 
@@ -131,8 +146,10 @@ export function validateExtractedFields(value: unknown): ExtractedFields {
     quantity: (obj.quantity as number | null | undefined) ?? null,
     unit: (obj.unit as string | null | undefined) ?? null,
     unitPrice: (obj.unitPrice as number | null | undefined) ?? null,
-    customerName: (obj.customerName as string | null | undefined) ?? null,
-    paymentType: (obj.paymentType as "cash" | "credit" | null | undefined) ?? null,
+    customerName:
+      (obj.customerName as string | null | undefined) ?? null,
+    paymentType:
+      (obj.paymentType as "cash" | "credit" | null | undefined) ?? null,
     dueDate: (obj.dueDate as string | null | undefined) ?? null,
   };
 }
@@ -141,7 +158,9 @@ export function validateExtractedFields(value: unknown): ExtractedFields {
  * Returns the list of required field names that are still null.
  * Empty array means the extraction is complete enough to build a Transaction.
  */
-export function getMissingRequiredFields(fields: ExtractedFields): string[] {
+export function getMissingRequiredFields(
+  fields: ExtractedFields
+): string[] {
   return REQUIRED_FIELDS.filter((key) => fields[key] === null);
 }
 
@@ -150,7 +169,10 @@ export function getMissingRequiredFields(fields: ExtractedFields): string[] {
  * a server-generated timestamp. Call getMissingRequiredFields() first and
  * only call this when it returns an empty array.
  */
-export function toTransaction(fields: ExtractedFields, timestamp: string): Transaction {
+export function toTransaction(
+  fields: ExtractedFields,
+  timestamp: string
+): Transaction {
   if (
     fields.item === null ||
     fields.quantity === null ||
