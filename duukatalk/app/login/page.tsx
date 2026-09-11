@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowRight,
   Eye,
@@ -32,13 +32,14 @@ interface AuthApiResponse {
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [mode, setMode] = useState<AuthMode>(() =>
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).get('mode') === 'login'
-      ? 'login'
-      : 'signup',
+  const modeParam = searchParams.get('mode');
+
+  const [mode, setMode] = useState<AuthMode>(
+    modeParam === 'login' ? 'login' : 'signup',
   );
+
   const [language, setLanguage] = useState<Language>('EN');
   const [businessName, setBusinessName] = useState('');
   const [pin, setPin] = useState('');
@@ -49,9 +50,29 @@ export default function LoginPage() {
 
   const isSignup = mode === 'signup';
 
+  /*
+   * Keep the local mode in sync with the URL.
+   *
+   * This is important because after signup we navigate to:
+   * /login?mode=login
+   */
+  useEffect(() => {
+    const nextMode: AuthMode =
+      searchParams.get('mode') === 'login' ? 'login' : 'signup';
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMode(nextMode);
+  }, [searchParams]);
+
   useEffect(() => {
     const savedLanguage = window.localStorage.getItem('duukatalk-language');
-    if (savedLanguage && LANGUAGE_OPTIONS.some((option) => option.value === savedLanguage)) {
+
+    if (
+      savedLanguage &&
+      LANGUAGE_OPTIONS.some(
+        (option) => option.value === savedLanguage,
+      )
+    ) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLanguage(savedLanguage as Language);
     }
@@ -64,6 +85,7 @@ export default function LoginPage() {
 
   const formatLockoutMessage = (lockedUntil: string): string => {
     const unlockDate = new Date(lockedUntil);
+
     const timeLabel = unlockDate.toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
@@ -75,7 +97,9 @@ export default function LoginPage() {
     );
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault();
 
     setError('');
@@ -138,9 +162,8 @@ export default function LoginPage() {
           ),
         );
 
-        // Refresh onto the login mode after account creation.
+        // Move to login mode after account creation.
         router.replace('/login?mode=login');
-        router.refresh();
         return;
       }
 
@@ -187,17 +210,22 @@ export default function LoginPage() {
       }
 
       // Login was successful.
-      // The API should return the authenticated vendorId.
       window.localStorage.setItem(
         'duukatalk-user',
         JSON.stringify({
           vendorId: data.vendorId,
-          businessName: data.businessName || businessName.trim(),
+          businessName:
+            data.businessName || businessName.trim(),
           ownerName: data.ownerName || '',
           phone: data.phone || '',
         }),
       );
-      window.localStorage.setItem('duukatalk-language', language);
+
+      window.localStorage.setItem(
+        'duukatalk-language',
+        language,
+      );
+
       console.log('Vendor logged in:', {
         vendorId: data.vendorId,
         businessName: data.businessName,
@@ -218,14 +246,16 @@ export default function LoginPage() {
   };
 
   const switchMode = (nextMode: AuthMode) => {
-    if (nextMode === 'login' && isSignup) {
-      router.replace('/login?mode=login');
-      router.refresh();
-      return;
-    }
     setMode(nextMode);
     setError('');
     setMessage('');
+
+    const url =
+      nextMode === 'login'
+        ? '/login?mode=login'
+        : '/login?mode=signup';
+
+    router.replace(url);
   };
 
   return (
@@ -241,7 +271,9 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <p className="text-lg font-bold leading-none">DuukaTalk</p>
+            <p className="text-lg font-bold leading-none">
+              DuukaTalk
+            </p>
             <p className="mt-1 text-xs font-medium text-blue-200">
               {text(
                 'Your shop, your story.',
@@ -307,14 +339,23 @@ export default function LoginPage() {
               id="login-language-mode"
               value={language}
               onChange={(event) => {
-                const nextLanguage = event.target.value as Language;
+                const nextLanguage =
+                  event.target.value as Language;
+
                 setLanguage(nextLanguage);
-                window.localStorage.setItem('duukatalk-language', nextLanguage);
+
+                window.localStorage.setItem(
+                  'duukatalk-language',
+                  nextLanguage,
+                );
               }}
               className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-blue-600"
             >
               {LANGUAGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
+                <option
+                  key={option.value}
+                  value={option.value}
+                >
                   {option.label}
                 </option>
               ))}
@@ -327,7 +368,9 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <p className="font-bold text-blue-950">DuukaTalk</p>
+              <p className="font-bold text-blue-950">
+                DuukaTalk
+              </p>
               <p className="text-xs text-slate-500">
                 {text(
                   'Your shop, your story.',
@@ -340,14 +383,23 @@ export default function LoginPage() {
           <div className="mb-8">
             <p className="mb-3 text-sm font-semibold text-amber-600">
               {isSignup
-                ? text('Welcome to DuukaTalk', 'Tuyambalidde DuukaTalk')
+                ? text(
+                    'Welcome to DuukaTalk',
+                    'Tuyambalidde DuukaTalk',
+                  )
                 : text('Welcome back', 'Tuyanjula')}
             </p>
 
             <h2 className="text-3xl font-bold tracking-tight text-blue-950 sm:text-4xl">
               {isSignup
-                ? text('Set up your shop.', 'Tegeka akatale ko.')
-                : text('Log in to your shop.', 'Yingira mu katale ko.')}
+                ? text(
+                    'Set up your shop.',
+                    'Tegeka akatale ko.',
+                  )
+                : text(
+                    'Log in to your shop.',
+                    'Yingira mu katale ko.',
+                  )}
             </h2>
 
             <p className="mt-3 text-sm leading-6 text-slate-500">
