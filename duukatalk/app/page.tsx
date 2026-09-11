@@ -1,10 +1,21 @@
 'use client';
 
-import { ArrowRight, Mic, Store, BookOpen, BarChart3 } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowRight, Mic, BookOpen, BarChart3 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { LANGUAGE_OPTIONS, Language, translate } from '@/lib/i18n';
 
 export default function GetStartedPage() {
   const router = useRouter();
+  const [language, setLanguage] = useState<Language>(() => {
+    if (typeof window === 'undefined') return 'EN';
+    const saved = window.localStorage.getItem('duukatalk-language');
+    return saved && LANGUAGE_OPTIONS.some((option) => option.value === saved)
+      ? (saved as Language)
+      : 'EN';
+  });
+
+  const text = (value: string) => translate(language, value);
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
@@ -25,7 +36,7 @@ export default function GetStartedPage() {
             <div>
               <p className="text-lg font-bold leading-none">DuukaTalk</p>
               <p className="mt-1 text-xs font-medium text-blue-200">
-                Your shop, your story.
+                {text('Your shop, your story.')}
               </p>
             </div>
           </div>
@@ -33,16 +44,15 @@ export default function GetStartedPage() {
           {/* Main message */}
           <div className="relative z-10 my-12 max-w-lg lg:my-0">
             <p className="mb-5 text-sm font-semibold uppercase tracking-[0.22em] text-amber-400">
-              Simple books. Strong business.
+              {text('Simple books. Strong business.')}
             </p>
 
             <h1 className="text-4xl font-bold leading-tight sm:text-5xl xl:text-6xl">
-              Keep your business moving forward.
+              {text('Keep your business moving forward.')}
             </h1>
 
             <p className="mt-6 max-w-md text-base leading-7 text-blue-100 sm:text-lg">
-              Record sales, track debts, and understand your shop&apos;s
-              story in one friendly place.
+              {text("Record sales, track debts, and understand your shop's story in one friendly place.")}
             </p>
           </div>
 
@@ -55,6 +65,27 @@ export default function GetStartedPage() {
         {/* Right side */}
         <section className="flex flex-1 items-center justify-center bg-white px-6 py-12 sm:px-10 lg:min-h-screen lg:px-16">
           <div className="w-full max-w-lg">
+            <div className="mb-6 flex justify-end">
+              <label className="sr-only" htmlFor="landing-language">
+                Language
+              </label>
+              <select
+                id="landing-language"
+                value={language}
+                onChange={(event) => {
+                  const nextLanguage = event.target.value as Language;
+                  setLanguage(nextLanguage);
+                  window.localStorage.setItem('duukatalk-language', nextLanguage);
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
+              >
+                {LANGUAGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             {/* Mobile logo */}
             <div className="mb-10 flex items-center gap-3 lg:hidden">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-blue-950">
@@ -71,16 +102,15 @@ export default function GetStartedPage() {
 
             <div className="mb-10">
               <p className="mb-3 text-sm font-semibold text-amber-600">
-                Welcome to DuukaTalk
+                {text('Welcome to DuukaTalk')}
               </p>
 
               <h2 className="text-3xl font-bold tracking-tight text-blue-950 sm:text-4xl">
-                Your business, made simpler.
+                {text('Your business, made simpler.')}
               </h2>
 
               <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">
-                Keep track of your sales and customer debts without the
-                stress of complicated bookkeeping.
+                {text('Keep track of your sales and customer debts without the stress of complicated bookkeeping.')}
               </p>
             </div>
 
@@ -93,7 +123,7 @@ export default function GetStartedPage() {
 
                 <div>
                   <h3 className="font-semibold text-slate-900">
-                    Record with your voice
+                    {text('Record with your voice')}
                   </h3>
                   <p className="mt-1 text-sm leading-5 text-slate-500">
                     Speak naturally and let DuukaTalk help record your
@@ -109,7 +139,7 @@ export default function GetStartedPage() {
 
                 <div>
                   <h3 className="font-semibold text-slate-900">
-                    Keep your ledger organized
+                    {text('Keep your ledger organized')}
                   </h3>
                   <p className="mt-1 text-sm leading-5 text-slate-500">
                     See your sales and customer debts in one simple ledger.
@@ -124,7 +154,7 @@ export default function GetStartedPage() {
 
                 <div>
                   <h3 className="font-semibold text-slate-900">
-                    Understand your business
+                    {text('Understand your business')}
                   </h3>
                   <p className="mt-1 text-sm leading-5 text-slate-500">
                     Get a clear view of sales and outstanding credit.
@@ -139,12 +169,12 @@ export default function GetStartedPage() {
               onClick={() => router.push('/login')}
               className="mt-8 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-blue-900 px-6 text-sm font-bold text-white shadow-lg shadow-blue-950/15 transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-900/20"
             >
-              Get Started
+              {text('Get Started')}
               <ArrowRight size={19} />
             </button>
 
             <p className="mt-5 text-center text-xs text-slate-400">
-              Create an account or log in to continue.
+              {text('Create an account or log in to continue.')}
             </p>
           </div>
         </section>

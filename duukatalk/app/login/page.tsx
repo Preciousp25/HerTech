@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
@@ -11,9 +11,13 @@ import {
   Mic,
   Store,
 } from 'lucide-react';
+import {
+  LANGUAGE_OPTIONS,
+  Language,
+  translate,
+} from '@/lib/i18n';
 
 type AuthMode = 'signup' | 'login';
-type Language = 'EN' | 'LUG' | 'MIX';
 
 interface AuthApiResponse {
   success: boolean;
@@ -29,8 +33,13 @@ interface AuthApiResponse {
 export default function LoginPage() {
   const router = useRouter();
 
-  const [mode, setMode] = useState<AuthMode>('signup');
-  const [language, setLanguage] = useState<Language>('MIX');
+  const [mode, setMode] = useState<AuthMode>(() =>
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('mode') === 'login'
+      ? 'login'
+      : 'signup',
+  );
+  const [language, setLanguage] = useState<Language>('EN');
   const [businessName, setBusinessName] = useState('');
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -40,12 +49,18 @@ export default function LoginPage() {
 
   const isSignup = mode === 'signup';
 
-  const text = (english: string, luganda: string) =>
-    language === 'EN'
-      ? english
-      : language === 'LUG'
-        ? luganda
-        : `${english} · ${luganda}`;
+  useEffect(() => {
+    const savedLanguage = window.localStorage.getItem('duukatalk-language');
+    if (savedLanguage && LANGUAGE_OPTIONS.some((option) => option.value === savedLanguage)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLanguage(savedLanguage as Language);
+    }
+  }, []);
+
+  const text = (english: string, legacyLuganda?: string) => {
+    void legacyLuganda;
+    return translate(language, english);
+  };
 
   const formatLockoutMessage = (lockedUntil: string): string => {
     const unlockDate = new Date(lockedUntil);
@@ -123,10 +138,9 @@ export default function LoginPage() {
           ),
         );
 
-        // Switch to login mode after successful signup.
-        setMode('login');
-        setPin('');
-
+        // Refresh onto the login mode after account creation.
+        router.replace('/login?mode=login');
+        router.refresh();
         return;
       }
 
@@ -174,6 +188,16 @@ export default function LoginPage() {
 
       // Login was successful.
       // The API should return the authenticated vendorId.
+      window.localStorage.setItem(
+        'duukatalk-user',
+        JSON.stringify({
+          vendorId: data.vendorId,
+          businessName: data.businessName || businessName.trim(),
+          ownerName: data.ownerName || '',
+          phone: data.phone || '',
+        }),
+      );
+      window.localStorage.setItem('duukatalk-language', language);
       console.log('Vendor logged in:', {
         vendorId: data.vendorId,
         businessName: data.businessName,
@@ -194,6 +218,11 @@ export default function LoginPage() {
   };
 
   const switchMode = (nextMode: AuthMode) => {
+    if (nextMode === 'login' && isSignup) {
+      router.replace('/login?mode=login');
+      router.refresh();
+      return;
+    }
     setMode(nextMode);
     setError('');
     setMessage('');
@@ -277,14 +306,18 @@ export default function LoginPage() {
             <select
               id="login-language-mode"
               value={language}
-              onChange={(event) =>
-                setLanguage(event.target.value as Language)
-              }
+              onChange={(event) => {
+                const nextLanguage = event.target.value as Language;
+                setLanguage(nextLanguage);
+                window.localStorage.setItem('duukatalk-language', nextLanguage);
+              }}
               className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-blue-600"
             >
-              <option value="EN">English</option>
-              <option value="LUG">Luganda</option>
-              <option value="MIX">English + Luganda</option>
+              {LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </div>
 

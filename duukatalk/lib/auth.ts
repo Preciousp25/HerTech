@@ -302,3 +302,29 @@ export async function loginVendor(
     phone: record.phone,
   };
 }
+
+export async function updateVendorProfile(
+  vendorId: string,
+  params: { pin?: string; phone?: string }
+): Promise<{ phone: string }> {
+  if (params.pin !== undefined && !isValidPinFormat(params.pin)) {
+    throw new Error("PIN must be exactly 4 digits");
+  }
+
+  const updates: Record<string, string> = {
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (params.pin !== undefined) {
+    updates.hashedPin = hashPin(params.pin);
+  }
+
+  if (params.phone !== undefined) {
+    updates.phone = params.phone.trim();
+  }
+
+  const vendorRef = doc(db, VENDORS_COLLECTION, vendorId);
+  await updateDoc(vendorRef, updates);
+
+  return { phone: params.phone?.trim() || "" };
+}

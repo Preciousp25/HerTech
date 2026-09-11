@@ -10,7 +10,7 @@ DuukaTalk is a voice-first sales and credit ledger for market vendors. Vendors c
 - Retry structured extraction with Gemini when the Sunflower response cannot be parsed and a Gemini key is configured.
 - Review ledger entries, outstanding customer credit, summaries, and risk flags.
 - Export the currently filtered ledger as a CSV file.
-- Use English, Luganda, or a mixed English/Luganda interface.
+- Use English, Kiswahili, Arabic, or French throughout the interface.
 
 ## Technology
 
