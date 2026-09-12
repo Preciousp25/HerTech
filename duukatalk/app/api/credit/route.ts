@@ -6,6 +6,8 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { isOutstandingCredit } from "@/lib/credit";
+import { settleCustomerCredit } from "@/lib/updateCustomerCredit";
 
 const AUTH_COOKIE_NAME = "duukatalk_vendor_id";
 
@@ -52,8 +54,8 @@ export async function GET(request: NextRequest) {
     > = {};
 
     for (const txn of transactions) {
-      // Only credit transactions are debts
-      if (txn.payment_type?.toLowerCase() !== "credit") {
+      // Only include genuinely outstanding credit transactions
+      if (!isOutstandingCredit(txn)) {
         continue;
       }
 
@@ -86,6 +88,37 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       { error: "Failed to fetch credit balances" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = (await request.json()) as {
+      customerName?: string;
+    };
+
+    const customerName = body.customerName?.trim();
+
+    if (!customerName) {
+      return NextResponse.json(
+        { error: "customerName is required" },
+        { status: 400 }
+      );
+    }
+
+    const result = await settleCustomerCredit(customerName);
+
+    return NextResponse.json({
+      customerName,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Failed to settle customer credit:", error);
+
+    return NextResponse.json(
+      { error: "Failed to record payment" },
       { status: 500 }
     );
   }

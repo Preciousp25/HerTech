@@ -6,6 +6,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { isOutstandingCredit } from "@/lib/credit";
 
 const AUTH_COOKIE_NAME = "duukatalk_vendor_id";
 
@@ -39,11 +40,15 @@ export async function GET(request: NextRequest) {
     for (const txn of transactions) {
       const amount = Number(txn.total_amount) || 0;
 
-      if (txn.payment_type === "cash") {
+      // Cash transactions and settled credit transactions
+      // count toward total sales.
+      if (txn.payment_type === "cash" || txn.settled === true) {
         totalSales += amount;
       }
 
-      if (txn.payment_type === "credit") {
+      // Only genuinely outstanding credit transactions
+      // should count as money still owed.
+      if (isOutstandingCredit(txn)) {
         totalCreditOutstanding += amount;
 
         const name = txn.customer_name || "Unknown";

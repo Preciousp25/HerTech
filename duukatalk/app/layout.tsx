@@ -13,8 +13,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DuukaTalk",
-  description: "Simple books and stronger business for local shop owners.",
+  title: "DuuKaTalk Ledger",
+  description: "Offline-first sales and debt ledger for small shops.",
+  applicationName: "DuuKaTalk Ledger",
+  appleWebApp: {
+    capable: true,
+    title: "DuuKaTalk Ledger",
+    statusBarStyle: "default",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

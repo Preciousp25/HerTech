@@ -15,6 +15,8 @@ export interface FirestoreTransaction {
   customer_name: string | null;
   payment_type: "cash" | "credit";
   due_date: string | null;
+  settled?: boolean;
+  settled_at?: string | null;
   timestamp: string;
   raw_transcript: string;
   confidence_flag: boolean;
@@ -39,6 +41,8 @@ export function toFirestoreTransaction(
     customer_name: transaction.customerName,
     payment_type: transaction.paymentType,
     due_date: transaction.dueDate,
+    settled: false,
+    settled_at: null,
     timestamp: transaction.timestamp,
     raw_transcript: transcript,
     confidence_flag:
