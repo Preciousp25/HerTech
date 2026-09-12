@@ -1,6 +1,11 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import {
+  FormEvent,
+  Suspense,
+  useEffect,
+  useState,
+} from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowRight,
@@ -30,7 +35,7 @@ interface AuthApiResponse {
   phone?: string;
 }
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -65,7 +70,9 @@ export default function LoginPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    const savedLanguage = window.localStorage.getItem('duukatalk-language');
+    const savedLanguage = window.localStorage.getItem(
+      'duukatalk-language',
+    );
 
     if (
       savedLanguage &&
@@ -162,7 +169,6 @@ export default function LoginPage() {
           ),
         );
 
-        // Move to login mode after account creation.
         router.replace('/login?mode=login');
         return;
       }
@@ -602,5 +608,22 @@ export default function LoginPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-slate-100">
+          <Loader2
+            size={24}
+            className="animate-spin text-blue-900"
+          />
+        </main>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

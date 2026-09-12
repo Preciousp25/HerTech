@@ -8,6 +8,9 @@ import {
 } from "@/lib/schema";
 import { db } from "@/lib/firebase";
 import { toFirestoreTransaction } from "@/lib/firestore-transaction";
+import { updateCustomerCredit } from "@/lib/updateCustomerCredit";
+import { notifyAfterTransaction } from "@/lib/notify-transaction";
+import { getNextTransactionId } from "@/lib/transaction-id";
 
 export const runtime = "nodejs";
 
@@ -82,8 +85,7 @@ export async function POST(
     return NextResponse.json(
       {
         success: false,
-        error:
-          "Audio file exceeds maximum allowed size (50MB)",
+        error: "Audio file exceeds maximum allowed size (50MB)",
       },
       { status: 400 }
     );
@@ -132,9 +134,6 @@ export async function POST(
       result.extracted
     );
 
-    // If the AI could not extract enough information,
-    // return the result so the frontend can ask the
-    // vendor to clarify the transaction.
     if (missingFields.length > 0) {
       return NextResponse.json(
         {
@@ -154,17 +153,23 @@ export async function POST(
 
     const timestamp = new Date().toISOString();
 
+    // Convert the AI-extracted data into the application's
+    // standard transaction format.
     const transaction = toTransaction(
       result.extracted,
       timestamp
     );
 
     // --------------------------------------------------
-    // 8. Create Firestore document reference
+    // 8. Generate transaction ID and Firestore reference
     // --------------------------------------------------
 
+    const transactionId = await getNextTransactionId();
+
     const docRef = doc(
-      collection(db, TRANSACTIONS_COLLECTION)
+      db,
+      TRANSACTIONS_COLLECTION,
+      transactionId
     );
 
     // --------------------------------------------------
@@ -172,13 +177,12 @@ export async function POST(
     //    and attach the authenticated vendor ID
     // --------------------------------------------------
 
-    const firestoreTransaction =
-      toFirestoreTransaction(
-        transaction,
-        result.transcript,
-        docRef.id,
-        vendorId
-      );
+    const firestoreTransaction = toFirestoreTransaction(
+      transaction,
+      result.transcript,
+      transactionId,
+      vendorId
+    );
 
     // --------------------------------------------------
     // 10. Save transaction to Firestore
@@ -192,7 +196,37 @@ export async function POST(
     });
 
     // --------------------------------------------------
-    // 11. Return successful response
+    // 11. Update customer credit when necessary
+    // --------------------------------------------------
+
+    let outstandingCredit: number | undefined;
+
+    if (
+      transaction.paymentType === "credit" &&
+      transaction.customerName
+    ) {
+      outstandingCredit =
+        (await updateCustomerCredit(
+          transaction.customerName
+        )) ?? undefined;
+    }
+
+    // --------------------------------------------------
+    // 12. Send transaction notification
+    // --------------------------------------------------
+
+    const sms = await notifyAfterTransaction({
+      customerName: transaction.customerName,
+      paymentType: transaction.paymentType,
+      item: transaction.item,
+      amount: firestoreTransaction.total_amount,
+      quantity: transaction.quantity,
+      dueDate: transaction.dueDate,
+      outstandingCredit,
+    });
+
+    // --------------------------------------------------
+    // 13. Return successful response
     // --------------------------------------------------
 
     return NextResponse.json(
@@ -201,6 +235,7 @@ export async function POST(
         transcript: result.transcript,
         transaction,
         transactionId: docRef.id,
+        sms,
       },
       { status: 200 }
     );
