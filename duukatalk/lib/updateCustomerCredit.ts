@@ -2,7 +2,9 @@ import {
   collection,
   doc,
   getDocs,
+  query,
   setDoc,
+  where,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -11,8 +13,16 @@ import { isOutstandingCredit, normalizeCustomerName } from "./credit";
 const TRANSACTIONS_COLLECTION = "transactions";
 const CUSTOMERS_COLLECTION = "customers";
 
-async function getCustomerTransactions(customerName: string) {
-  const snapshot = await getDocs(collection(db, TRANSACTIONS_COLLECTION));
+async function getCustomerTransactions(
+  vendorId: string,
+  customerName: string,
+) {
+  const transactionsQuery = query(
+    collection(db, TRANSACTIONS_COLLECTION),
+    where("vendor_id", "==", vendorId),
+  );
+
+  const snapshot = await getDocs(transactionsQuery);
   const requestedKey = normalizeCustomerName(customerName);
 
   return snapshot.docs.filter((docSnap) => {
@@ -26,12 +36,13 @@ async function getCustomerTransactions(customerName: string) {
  * transactions and writes it to their customer profile.
  */
 export async function updateCustomerCredit(
+  vendorId: string,
   customerName: string,
 ): Promise<number | void> {
   if (!customerName?.trim()) return;
 
   try {
-    const snapshot = await getCustomerTransactions(customerName);
+    const snapshot = await getCustomerTransactions(vendorId, customerName);
 
     const totalCredit = snapshot.reduce((sum, docSnap) => {
       const data = docSnap.data();
@@ -39,11 +50,14 @@ export async function updateCustomerCredit(
       return sum + (Number(data.total_amount) || 0);
     }, 0);
 
-    const customerKey = normalizeCustomerName(customerName);
+    // Scope the customer profile by vendor too, so two vendors with a
+    // same-named customer don't collide on a single shared profile.
+    const customerKey = `${vendorId}_${normalizeCustomerName(customerName)}`;
     const customerRef = doc(db, CUSTOMERS_COLLECTION, customerKey);
     await setDoc(
       customerRef,
       {
+        vendor_id: vendorId,
         customer_name: customerName.trim(),
         outstanding_credit: totalCredit,
         updated_at: new Date().toISOString(),
@@ -62,11 +76,14 @@ export async function updateCustomerCredit(
  * Marks every open credit transaction for the customer as paid, then
  * refreshes their outstanding balance.
  */
-export async function settleCustomerCredit(customerName: string): Promise<{
+export async function settleCustomerCredit(
+  vendorId: string,
+  customerName: string,
+): Promise<{
   paidAmount: number;
   outstandingCredit: number;
 }> {
-  const snapshot = await getCustomerTransactions(customerName);
+  const snapshot = await getCustomerTransactions(vendorId, customerName);
   const settledAt = new Date().toISOString();
   const batch = writeBatch(db);
   let paidAmount = 0;
@@ -87,6 +104,7 @@ export async function settleCustomerCredit(customerName: string): Promise<{
     await batch.commit();
   }
 
-  const outstandingCredit = (await updateCustomerCredit(customerName)) ?? 0;
+  const outstandingCredit =
+    (await updateCustomerCredit(vendorId, customerName)) ?? 0;
   return { paidAmount, outstandingCredit };
 }

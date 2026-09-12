@@ -24,6 +24,12 @@ interface CreditTransaction {
   settled?: boolean;
 }
 
+interface CustomerBalance {
+  customerName: string;
+  owed: number;
+  dueDates: string[];
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Get the currently logged-in vendor
@@ -49,14 +55,7 @@ export async function GET(request: NextRequest) {
       ...(doc.data() as Omit<CreditTransaction, "id">),
     }));
 
-    const balances: Record<
-      string,
-      {
-        customerName: string;
-        owed: number;
-        dueDates: string[];
-      }
-    > = {};
+    const balances: Record<string, CustomerBalance> = {};
 
     for (const txn of transactions) {
       // Only include genuinely outstanding credit transactions
@@ -94,7 +93,9 @@ export async function GET(request: NextRequest) {
         dueDates: data.dueDates,
       }));
 
-    return NextResponse.json({ customers });
+    // Return the array directly so the frontend can call .map()
+    // on the response without unwrapping a wrapper object.
+    return NextResponse.json(customers);
   } catch (error) {
     console.error("Failed to fetch credit balances:", error);
 
@@ -105,8 +106,17 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const vendorId = request.cookies.get(AUTH_COOKIE_NAME)?.value;
+
+    if (!vendorId) {
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     const body = (await request.json()) as {
       customerName?: string;
     };
@@ -120,7 +130,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await settleCustomerCredit(customerName);
+    const result = await settleCustomerCredit(vendorId, customerName);
 
     return NextResponse.json({
       customerName,
@@ -135,4 +145,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

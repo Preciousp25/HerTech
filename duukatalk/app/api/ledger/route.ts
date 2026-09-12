@@ -61,6 +61,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Get the logged-in vendor ID.
+    const vendorId = request.cookies.get(AUTH_COOKIE_NAME)?.value;
+
+    if (!vendorId) {
+      return NextResponse.json(
+        {
+          error: "Not authenticated",
+        },
+        { status: 401 }
+      );
+    }
+
     const body = (await request.json()) as {
       customer?: string;
       customer_name?: string;
@@ -76,7 +88,8 @@ export async function POST(request: NextRequest) {
     };
 
     const customer = (body.customer ?? body.customer_name)?.trim();
-    const customerKey = normalizeCustomerName(customer);
+    // Scoped by vendor to match the key updateCustomerCredit writes to.
+    const customerKey = `${vendorId}_${normalizeCustomerName(customer)}`;
     const item = body.item?.trim();
     const amount = Number(body.amount ?? body.total_amount);
 
@@ -99,6 +112,7 @@ export async function POST(request: NextRequest) {
     if (paymentType === "credit") {
       const customerRef = doc(db, "customers", customerKey);
       const customerSnap = await getDoc(customerRef);
+
       const outstandingCredit = customerSnap.exists()
         ? Number(customerSnap.data().outstanding_credit || 0)
         : 0;
@@ -115,13 +129,14 @@ export async function POST(request: NextRequest) {
               `Okulabula: ${customer} alina amabanja agasigadde UGX ${outstandingCredit.toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Lekeka okukuza obulava obupya era funya ssente. Kozesa akatikkulu okukkiriza okulabula n'okuwandiika, oba akamukiye okugaana.`,
             ),
           },
-          { status: 409 },
+          { status: 409 }
         );
       }
     }
 
     const transactionId = await getNextTransactionId();
     const timestamp = new Date().toISOString();
+
     const transactionRef = doc(
       db,
       "transactions",
@@ -143,7 +158,8 @@ export async function POST(request: NextRequest) {
         timestamp,
       },
       "manual entry",
-      transactionId
+      transactionId,
+      vendorId
     );
 
     await setDoc(transactionRef, firestoreTransaction);
@@ -152,7 +168,7 @@ export async function POST(request: NextRequest) {
 
     if (paymentType === "credit") {
       outstandingCredit =
-        (await updateCustomerCredit(customer)) ?? undefined;
+        (await updateCustomerCredit(vendorId, customer)) ?? undefined;
     }
 
     const sms = await notifyAfterTransaction({
@@ -164,7 +180,7 @@ export async function POST(request: NextRequest) {
       dueDate: firestoreTransaction.due_date,
       outstandingCredit,
       customerPhone: body.phone,
-      language: parseLanguage(body.language),
+      language,
     });
 
     return NextResponse.json(
@@ -186,4 +202,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
