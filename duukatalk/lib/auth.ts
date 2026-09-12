@@ -24,6 +24,8 @@ export interface VendorRecord {
   businessNameLower: string;
   ownerName: string;
   phone: string;
+  country: string;
+  currency: string;
   failedAttempts: number;
   lockedUntil: string | null;
   createdAt: string;
@@ -41,6 +43,8 @@ export interface LoginResult {
   businessName?: string;
   ownerName?: string;
   phone?: string;
+  country?: string;
+  currency?: string;
 }
 
 export interface SignupResult {
@@ -123,12 +127,16 @@ export async function signupVendor(params: {
   businessName: string;
   ownerName?: string;
   phone?: string;
+  country?: string;
+  currency?: string;
 }): Promise<SignupResult> {
   const {
     pin,
     businessName,
     ownerName,
     phone,
+    country,
+    currency,
   } = params;
 
   if (!isValidPinFormat(pin)) {
@@ -160,6 +168,8 @@ export async function signupVendor(params: {
       .toLowerCase(),
     ownerName: ownerName?.trim() || "",
     phone: phone?.trim() || "",
+    country: country?.trim() || "",
+    currency: currency?.trim() || "",
     failedAttempts: 0,
     lockedUntil: null,
     createdAt: now,
@@ -300,6 +310,8 @@ export async function loginVendor(
     businessName: record.businessName,
     ownerName: record.ownerName,
     phone: record.phone,
+    country: record.country,
+    currency: record.currency,
   };
 }
 
@@ -307,7 +319,10 @@ export async function updateVendorProfile(
   vendorId: string,
   params: { pin?: string; phone?: string }
 ): Promise<{ phone: string }> {
-  if (params.pin !== undefined && !isValidPinFormat(params.pin)) {
+  if (
+    params.pin !== undefined &&
+    !isValidPinFormat(params.pin)
+  ) {
     throw new Error("PIN must be exactly 4 digits");
   }
 
@@ -323,8 +338,15 @@ export async function updateVendorProfile(
     updates.phone = params.phone.trim();
   }
 
-  const vendorRef = doc(db, VENDORS_COLLECTION, vendorId);
+  const vendorRef = doc(
+    db,
+    VENDORS_COLLECTION,
+    vendorId
+  );
+
   await updateDoc(vendorRef, updates);
 
-  return { phone: params.phone?.trim() || "" };
+  return {
+    phone: params.phone?.trim() || "",
+  };
 }

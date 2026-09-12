@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
   BarChart3,
+  Bell,
   BookOpen,
   CheckCircle,
   ChevronLeft,
@@ -96,6 +97,8 @@ interface StoredUser {
   businessName?: string;
   ownerName?: string;
   phone?: string;
+  country?: string;
+  currency?: string;
 }
 
 interface ApiDebt {
@@ -160,13 +163,22 @@ function safeFormatDateTime(value?: string | null): string {
 
   return parsed.toLocaleString();
 }
+function formatCurrency(
+  amount: number,
+  currency?: string
+): string {
+  const code = currency || 'UGX';
+
+  return `${code} ${amount.toLocaleString()}`;
+}
 
 export default function DuukaTalkApp() {
   const router = useRouter();
 
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [language, setLanguage] = useState<Language>('EN');
-  const [activeTab, setActiveTab] = useState<TabType>('reports');
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>('record');
   const [user, setUser] = useState<StoredUser>({});
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
@@ -588,6 +600,27 @@ const [questionError, setQuestionError] =
       );
     }
   );
+  const notifications = [
+  ...debts
+    .filter((debt) => debt.amount > 200000)
+    .map((debt) => ({
+      id: `debt-${debt.id}`,
+      message: `${debt.customer} has an outstanding debt of UGX ${debt.amount.toLocaleString()}.`,
+    })),
+
+  ...debts
+    .filter((debt) => {
+      if (!debt.dueDate) return false;
+
+      const dueDate = new Date(debt.dueDate).getTime();
+
+      return !Number.isNaN(dueDate) && dueDate < reportNow;
+    })
+    .map((debt) => ({
+      id: `overdue-${debt.id}`,
+      message: `${debt.customer}'s debt is overdue.`,
+    })),
+];
 
   // =========================================================
   // HELPERS
@@ -625,6 +658,7 @@ const [questionError, setQuestionError] =
     );
   };
 
+  
   // =========================================================
   // PRIVACY SETTINGS
   // =========================================================
@@ -2079,15 +2113,15 @@ console.log('Question audio:', {
 
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-            {text(
-              'Total Amount (UGX)',
-              'Omuwendo (UGX)'
-            )}
+            { text(
+  `Total Amount (${user.currency || 'UGX'})`,
+  `Omuwendo (${user.currency || 'UGX'})`
+)}
           </label>
 
           <div className="relative">
             <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">
-              UGX
+            {user.currency || 'UGX'}
             </span>
 
             <input
@@ -2301,12 +2335,11 @@ console.log('Question audio:', {
                 )}
               </span>
 
-              <div className="text-2xl font-extrabold mt-0.5">
-                {isLoadingData
-                  ? 'Loading...'
-                  : `UGX ${totalSales.toLocaleString()}`}
-              </div>
-            </div>
+             <div className="text-2xl font-extrabold mt-0.5">
+              {isLoadingData
+              ? 'Loading...'
+              : formatCurrency(totalSales, user.currency)}
+             </div>
 
             <span className="inline-flex items-center text-xs font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
               <TrendingUp
@@ -2317,7 +2350,7 @@ console.log('Question audio:', {
               Live
             </span>
           </div>
-
+</div>
           <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-blue-800/60 text-xs">
             <div>
               <span className="text-blue-300 text-[11px]">
@@ -2328,10 +2361,10 @@ console.log('Question audio:', {
               </span>
 
               <p className="font-bold text-sm">
-                {isLoadingData
-                  ? 'Loading...'
-                  : `UGX ${totalSales.toLocaleString()}`}
-              </p>
+  {isLoadingData
+    ? 'Loading...'
+    : formatCurrency(totalSales, user.currency)}
+</p>
             </div>
 
             <div>
@@ -2345,7 +2378,7 @@ console.log('Question audio:', {
               <p className="font-bold text-sm text-amber-300">
                 {isLoadingData
                   ? 'Loading...'
-                  : `UGX ${totalCreditOutstanding.toLocaleString()}`}
+                  : formatCurrency(totalCreditOutstanding, user.currency)}
               </p>
             </div>
           </div>
@@ -2497,155 +2530,96 @@ console.log('Question audio:', {
               </div>
             )}
 
-            {!isLoadingData &&
-              filteredTransactions.map(
-                (tx) => (
-                  <div
-                    key={tx.id}
-                    className={`p-3 rounded-xl border ${
-                      isDarkMode
-                        ? 'bg-slate-800/60 border-slate-700/60'
-                        : 'bg-white border-slate-100 shadow-sm'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 shrink-0 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
-                          {tx.initials}
-                        </div>
+          {!isLoadingData &&
+  filteredTransactions.map((tx) => (
+    <div
+      key={tx.id}
+      className={`p-3 rounded-xl border ${
+        isDarkMode
+          ? 'bg-slate-800/60 border-slate-700/60'
+          : 'bg-white border-slate-100 shadow-sm'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 shrink-0 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
+            {tx.initials}
+          </div>
 
-                        <div className="min-w-0">
-                          <h4 className="text-xs font-bold truncate">
-                            {tx.customer}
-                          </h4>
+          <div className="min-w-0">
+            <h4 className="text-xs font-bold truncate">
+              {tx.customer}
+            </h4>
 
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                            {tx.item}
-                          </p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+              {tx.item}
+            </p>
 
-                          <p className="text-[10px] text-slate-400 mt-0.5">
-                            {tx.date}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <div className="text-xs font-bold">
-                          UGX{' '}
-                          {tx.amount.toLocaleString()}
-                        </div>
-
-                        <div className="flex items-center justify-end gap-1.5 mt-1">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
-                              tx.type === 'cash'
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                            }`}
-                          >
-                            {tx.type === 'cash'
-                              ? 'Cash'
-                              : tx.dueDate ||
-                                'Credit'}
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleStartEdit(tx)
-                            }
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900 transition"
-                            aria-label={text(
-                              `Edit transaction for ${tx.customer}`,
-                              `Kyuusa ekiwandiiko kya ${tx.customer}`
-                            )}
-                            title={text(
-                              'Edit transaction',
-                              'Kyuusa ekiwandiiko'
-                            )}
-                          >
-                            <Edit3 size={13} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleStartDelete(tx)
-                            }
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-900 transition"
-                            aria-label={text(
-                              `Delete transaction for ${tx.customer}`,
-                              `Gyawo ekiwandiiko kya ${tx.customer}`
-                            )}
-                            title={text(
-                              'Delete transaction',
-                              'Gyawo ekiwandiiko'
-                            )}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              )}
-
-            {!isLoadingData &&
-              filteredTransactions.length === 0 && (
-                <p className="py-6 text-center text-xs text-slate-500">
-                  {transactions.length === 0
-                    ? text(
-                        'No transactions found in your database.',
-                        'Tewali transactions mu database yo.'
-                      )
-                    : text(
-                        'No matching transactions.',
-                        'Tewali bizuuliddwa.'
-                      )}
-                </p>
-              )}
+            <p className="text-[10px] text-slate-400 mt-0.5">
+              {tx.date}
+            </p>
           </div>
         </div>
 
-        {/* Floating Action Button */}
-                {/* Floating Voice Assistant Button */}
-        <button
-          type="button"
-          onClick={handleQuestionMicClick}
-          disabled={
-            isQuestionProcessing ||
-            isQuestionSpeaking
-          }
-          className={`absolute bottom-2 right-2 w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition ${
-            isQuestionRecording
-              ? 'bg-red-500 text-white animate-pulse'
-              : isQuestionProcessing ||
-                  isQuestionSpeaking
-                ? 'bg-amber-300 text-slate-700 cursor-not-allowed'
-                : 'bg-amber-500 text-slate-950 hover:bg-amber-400'
-          }`}
-          aria-label={
-            isQuestionRecording
-              ? 'Stop asking a question'
-              : 'Ask DuukaTalk a question'
-          }
-          aria-pressed={isQuestionRecording}
-        >
-          {isQuestionProcessing ? (
-            <Loader2
-              size={22}
-              className="animate-spin"
-            />
-          ) : (
-            <Mic size={22} />
-          )}
-        </button>
+        <div className="text-right shrink-0">
+          <div className="text-xs font-bold">
+            {formatCurrency(tx.amount, user.currency)}
+          </div>
+
+          <div className="flex items-center justify-end gap-1.5 mt-1">
+            <span
+              className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
+                tx.type === 'cash'
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+              }`}
+            >
+              {tx.type === 'cash'
+                ? 'Cash'
+                : tx.dueDate || 'Credit'}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => handleStartEdit(tx)}
+              className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900 transition"
+              aria-label={text(
+                `Edit transaction for ${tx.customer}`,
+                `Kyuusa ekiwandiiko kya ${tx.customer}`
+              )}
+              title={text(
+                'Edit transaction',
+                'Kyuusa ekiwandiiko'
+              )}
+            >
+              <Edit3 size={13} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleStartDelete(tx)}
+              className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-900 transition"
+              aria-label={text(
+                `Delete transaction for ${tx.customer}`,
+                `Gyawo ekiwandiiko kya ${tx.customer}`
+              )}
+              title={text(
+                'Delete transaction',
+                'Gyawo ekiwandiiko'
+              )}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  ))}
+          </div>
+        </div>
       </div>
     );
   };
-
-
 
   // =========================================================
   // EDIT MODAL
@@ -3561,67 +3535,148 @@ console.log('Question audio:', {
         }`}
       >
         {/* App Header */}
-        <header className="bg-blue-900 text-white px-5 py-4 flex items-center justify-between shadow-md">
-          <div className="flex items-center gap-2">
-            <div className="bg-amber-500 p-2 rounded-lg text-slate-900 font-bold">
-              <Mic size={18} />
-            </div>
+    <header className="bg-blue-900 text-white px-5 py-4 flex items-center justify-between shadow-md">
+  <div className="flex items-center gap-2">
+    <div className="bg-amber-500 p-2 rounded-lg text-slate-900 font-bold">
+      <Mic size={18} />
+    </div>
 
-            <h1 className="font-bold text-base leading-tight">
-              {user.businessName ||
-                'DuukaTalk'}
-            </h1>
-          </div>
+    <h1 className="font-bold text-base leading-tight">
+      {user.businessName || 'DuukaTalk'}
+    </h1>
+  </div>
 
-          <div className="flex items-center gap-2">
-            <label
-              className="sr-only"
-              htmlFor="language-mode"
-            >
-              Language
-            </label>
+  <div className="flex items-center gap-2">
+    <label
+      className="sr-only"
+      htmlFor="language-mode"
+    >
+      Language
+    </label>
 
-            <select
-              id="language-mode"
-              value={language}
-              onChange={(event) =>
-                handleLanguageChange(
-                  event.target
-                    .value as Language
-                )
-              }
-              className="max-w-28 rounded-md border border-blue-600 bg-blue-800/80 px-2 py-1 text-xs font-semibold text-white outline-none"
-            >
-              {LANGUAGE_OPTIONS.map(
-                (option) => (
-                  <option
-                    key={option.value}
-                    value={option.value}
-                  >
-                    {option.label}
-                  </option>
-                )
+    <select
+      id="language-mode"
+      value={language}
+      onChange={(event) =>
+        handleLanguageChange(
+          event.target.value as Language
+        )
+      }
+      className="max-w-28 rounded-md border border-blue-600 bg-blue-800/80 px-2 py-1 text-xs font-semibold text-white outline-none"
+    >
+      {LANGUAGE_OPTIONS.map((option) => (
+        <option
+          key={option.value}
+          value={option.value}
+        >
+          {option.label}
+        </option>
+      ))}
+    </select>
+
+    {/* Notifications */}
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() =>
+          setShowNotifications(
+            (open) => !open
+          )
+        }
+        className="relative rounded-md p-1.5 text-blue-200 transition hover:bg-blue-800/80 hover:text-white"
+        aria-label={text(
+          'Notifications',
+          'Obubaka'
+        )}
+      >
+        <Bell size={18} />
+
+        {notifications.length > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+            {notifications.length > 9
+              ? '9+'
+              : notifications.length}
+          </span>
+        )}
+      </button>
+
+      {showNotifications && (
+        <div className="absolute right-0 top-10 z-50 w-72 rounded-xl border border-slate-200 bg-white p-3 text-slate-800 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-bold">
+              {text(
+                'Notifications',
+                'Obubaka'
               )}
-            </select>
+            </h2>
 
             <button
               type="button"
               onClick={() =>
-                setIsSettingsOpen(
-                  (open) => !open
-                )
+                setShowNotifications(false)
               }
-              className="rounded-md p-1.5 text-blue-200 transition hover:bg-blue-800/80 hover:text-white"
+              className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-white"
               aria-label={text(
-                'Settings',
-                'Settings'
+                'Close notifications',
+                'Ggalawo obubaka'
               )}
             >
-              <Settings size={18} />
+              <X size={16} />
             </button>
           </div>
-        </header>
 
+          {notifications.length === 0 ? (
+            <p className="py-4 text-center text-xs text-slate-500 dark:text-slate-400">
+              {text(
+                'No new notifications',
+                'Tewali bubaka bupya'
+              )}
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {notifications.map(
+                (notification) => (
+                  <div
+                    key={notification.id}
+                    className="rounded-lg bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+                  >
+                    <div className="flex gap-2">
+                      <AlertCircle
+                        size={15}
+                        className="mt-0.5 shrink-0"
+                      />
+
+                      <span>
+                        {notification.message}
+                      </span>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+
+    {/* Settings */}
+    <button
+      type="button"
+      onClick={() =>
+        setIsSettingsOpen(
+          (open) => !open
+        )
+      }
+      className="rounded-md p-1.5 text-blue-200 transition hover:bg-blue-800/80 hover:text-white"
+      aria-label={text(
+        'Settings',
+        'Settings'
+      )}
+    >
+      <Settings size={18} />
+    </button>
+  </div>
+</header>
         {/* SETTINGS */}
         {isSettingsOpen && (
           <div className="absolute right-3 top-16 z-20 w-64 rounded-xl border border-slate-200 bg-white p-3 text-slate-800 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-white">
