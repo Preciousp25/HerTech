@@ -10,7 +10,7 @@ DuukaTalk is a voice-first sales and credit ledger for market vendors. Vendors c
 - Retry structured extraction with Gemini when the Sunflower response cannot be parsed and a Gemini key is configured.
 - Review ledger entries, outstanding customer credit, summaries, and risk flags.
 - Export the currently filtered ledger as a CSV file.
-- Use English,Luganda,Kiswahili, Arabic, or French throughout the interface.
+- Use English, Luganda, or a mixed English/Luganda interface.
 
 ## Technology
 
@@ -149,4 +149,3 @@ lib/
   firestore-transaction.ts   Firestore transaction mapping
   schema.ts                   Transaction validation and types
 public/                       Static assets
-```

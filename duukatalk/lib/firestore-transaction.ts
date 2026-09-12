@@ -1,4 +1,6 @@
 import { Transaction } from "./schema";
+import { db } from "./firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
 
 export interface FirestoreTransaction {
   id: string;
@@ -20,17 +22,16 @@ export interface FirestoreTransaction {
   confidence_flag: boolean;
 }
 
-const DEMO_VENDOR_ID = "vendor_001";
-
 export function toFirestoreTransaction(
   transaction: Transaction,
   transcript: string,
-  id: string
+  id: string,
+  vendorId: string
 ): FirestoreTransaction {
   return {
     id,
     transaction_id: id,
-    vendor_id: DEMO_VENDOR_ID,
+    vendor_id: vendorId,
     type: transaction.paymentType,
     item: transaction.item,
     quantity: transaction.quantity,
@@ -44,6 +45,38 @@ export function toFirestoreTransaction(
     settled_at: null,
     timestamp: transaction.timestamp,
     raw_transcript: transcript,
-    confidence_flag: transaction.customerName === null || transaction.item.trim() === "",
+    confidence_flag:
+      transaction.customerName === null ||
+      transaction.item.trim() === "",
   };
+}
+
+/**
+ * Builds a spoken-friendly summary of today's transactions.
+ */
+export async function buildDailySummary(vendorId: string): Promise<string> {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const transactionsQuery = query(
+    collection(db, "transactions"),
+    where("vendor_id", "==", vendorId),
+    where("timestamp", ">=", startOfToday.toISOString())
+  );
+  const snapshot = await getDocs(transactionsQuery);
+
+  const transactions = snapshot.docs.map((doc) => doc.data() as FirestoreTransaction);
+  const sales = transactions.filter((t) => t.payment_type === "cash");
+  const credits = transactions.filter((t) => t.payment_type === "credit");
+
+  const totalSales = sales.reduce((sum, t) => sum + t.total_amount, 0);
+  const totalOwed = credits.reduce((sum, t) => sum + t.total_amount, 0);
+
+  const creditList = credits
+    .map((t) => `${t.customer_name ?? "someone"} owes ${t.total_amount} shillings`)
+    .join(", ");
+
+  return `Today you made ${totalSales} shillings in sales. You are owed ${totalOwed} shillings in credit. ${
+    creditList ? creditList + "." : "No outstanding credit today."
+  }`;
 }
