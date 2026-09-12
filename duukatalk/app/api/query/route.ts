@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { NextRequest } from "next/server";
 
 import { QUERY_CLASSIFICATION_PROMPT } from "@/lib/prompts";
 import { buildDailySummary } from "@/lib/firestore-transaction";
@@ -7,9 +8,24 @@ const genAI = new GoogleGenerativeAI(
   process.env.GEMINI_API_KEY!
 );
 
-export async function POST(req: Request) {
+const AUTH_COOKIE_NAME = "duukatalk_vendor_id";
+
+export async function POST(req: NextRequest) {
   try {
-    // 1. Get audio
+    // 1. Get the logged-in vendor ID from the authentication cookie.
+    const vendorId =
+      req.cookies.get(AUTH_COOKIE_NAME)?.value;
+
+    if (!vendorId) {
+      return Response.json(
+        {
+          error: "Not authenticated",
+        },
+        { status: 401 }
+      );
+    }
+
+    // 2. Get audio
     const formData = await req.formData();
     const audioEntry = formData.get("audio");
 
@@ -27,7 +43,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Normalize the browser's WebM MIME type
+    // 3. Normalize the browser's WebM MIME type
     //
     // Browsers may send:
     // audio/webm;codecs=opus
@@ -46,7 +62,7 @@ export async function POST(req: Request) {
         }
       );
 
-    // 3. Speech-to-text
+    // 4. Speech-to-text
     //
     // Use the same Sunbird STT endpoint and upload format
     // that is already working in ai-provider.ts.
@@ -116,7 +132,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 4. Classify intent
+    // 5. Classify intent
     const model =
       genAI.getGenerativeModel({
         model: "gemini-3.6-flash",
@@ -149,7 +165,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 5. Build answer
+    // 6. Build answer
     let answerText =
       "Sorry, I didn't understand that question.";
 
@@ -164,9 +180,13 @@ export async function POST(req: Request) {
       intent.query_type ===
       "daily_summary"
     ) {
+      // Use the logged-in vendor ID.
+      //
+      // This is important because buildDailySummary()
+      // filters Firestore transactions by vendor_id.
       answerText =
         await buildDailySummary(
-          new Date().toISOString()
+          vendorId
         );
     } else if (
       intent.query_type ===
@@ -176,7 +196,7 @@ export async function POST(req: Request) {
         "Stock queries are coming soon.";
     }
 
-    // 6. Text-to-speech
+    // 7. Text-to-speech
     //
     // Use Sunbird's current audio speech endpoint.
     const ttsRes = await fetch(
@@ -222,6 +242,11 @@ export async function POST(req: Request) {
     const ttsData =
       await ttsRes.json();
 
+    console.log(
+      "Sunbird TTS response:",
+      ttsData
+    );
+
     if (!ttsData?.audio_url) {
       return Response.json(
         {
@@ -232,7 +257,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 7. Return everything to frontend
+    // 8. Return everything to frontend
     return Response.json({
       question,
       answer_text: answerText,
@@ -253,4 +278,3 @@ export async function POST(req: Request) {
     );
   }
 }
-
