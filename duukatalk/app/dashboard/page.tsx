@@ -235,6 +235,19 @@ export default function DuukaTalkApp() {
   const audioChunksRef = useRef<Blob[]>([]);
   const activeStreamRef = useRef<MediaStream | null>(null);
 
+  // --- VOICE QUESTION REFS ---
+const questionMediaRecorderRef =
+  useRef<MediaRecorder | null>(null);
+
+const questionAudioChunksRef =
+  useRef<Blob[]>([]);
+
+const questionStreamRef =
+  useRef<MediaStream | null>(null);
+
+const questionAudioRef =
+  useRef<HTMLAudioElement | null>(null);
+
   // --- LEDGER STATE ---
 
   const [timeframe, setTimeframe] = useState<
@@ -242,6 +255,24 @@ export default function DuukaTalkApp() {
   >('daily');
 
   const [searchQuery, setSearchQuery] = useState('');
+  // --- VOICE QUESTION STATE ---
+const [isQuestionRecording, setIsQuestionRecording] =
+  useState<boolean>(false);
+
+const [isQuestionProcessing, setIsQuestionProcessing] =
+  useState<boolean>(false);
+
+const [isQuestionSpeaking, setIsQuestionSpeaking] =
+  useState<boolean>(false);
+
+const [questionTranscript, setQuestionTranscript] =
+  useState<string>('');
+
+const [questionAnswer, setQuestionAnswer] =
+  useState<string>('');
+
+const [questionError, setQuestionError] =
+  useState<string>('');
 
   // --- INITIAL LOCAL STORAGE LOAD ---
 
@@ -1548,6 +1579,304 @@ export default function DuukaTalkApp() {
             )}: "${transcript}"`
           : '';
 
+
+
+  const stopQuestionMicrophoneTracks = () => {
+  questionStreamRef.current
+    ?.getTracks()
+    .forEach((track) => track.stop());
+
+  questionStreamRef.current = null;
+};
+const startQuestionRecording = async () => {
+  if (
+    isQuestionRecording ||
+    isQuestionProcessing
+  ) {
+    return;
+  }
+
+  try {
+    setQuestionError('');
+    setQuestionTranscript('');
+    setQuestionAnswer('');
+
+    if (
+      typeof window === 'undefined' ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      setQuestionError(
+        'Microphone access is not supported in this browser.'
+      );
+
+      return;
+    }
+
+    if (
+      typeof MediaRecorder ===
+      'undefined'
+    ) {
+      setQuestionError(
+        'Voice recording is not supported in this browser.'
+      );
+
+      return;
+    }
+
+    const stream =
+      await navigator.mediaDevices.getUserMedia(
+        {
+          audio: true,
+        }
+      );
+
+    questionStreamRef.current =
+      stream;
+
+    // Use the exact same recording format
+    // as the working transaction recorder.
+    const preferredMimeType =
+      'audio/webm';
+
+    const recorder =
+      MediaRecorder.isTypeSupported(
+        preferredMimeType
+      )
+        ? new MediaRecorder(
+            stream,
+            {
+              mimeType:
+                preferredMimeType,
+            }
+          )
+        : new MediaRecorder(
+            stream
+          );
+
+    questionMediaRecorderRef.current =
+      recorder;
+
+    questionAudioChunksRef.current =
+      [];
+
+    recorder.ondataavailable = (
+      event: BlobEvent
+    ) => {
+      if (
+        event.data &&
+        event.data.size > 0
+      ) {
+        questionAudioChunksRef.current.push(
+          event.data
+        );
+      }
+    };
+
+    recorder.onstop = () => {
+      stopQuestionMicrophoneTracks();
+
+      setIsQuestionRecording(false);
+
+      const mimeType =
+        recorder.mimeType ||
+        preferredMimeType;
+
+      const audioBlob =
+        new Blob(
+          questionAudioChunksRef.current,
+          {
+            type: mimeType,
+          }
+        );
+console.log('Question audio:', {
+  size: audioBlob.size,
+  type: audioBlob.type,
+  chunks: questionAudioChunksRef.current.length,
+});
+      questionAudioChunksRef.current =
+        [];
+
+      void askVoiceQuestion(
+        audioBlob
+      );
+    };
+
+    recorder.onerror = () => {
+      stopQuestionMicrophoneTracks();
+
+      setIsQuestionRecording(false);
+
+      setQuestionError(
+        'Recording failed. Please try again.'
+      );
+    };
+
+    recorder.start();
+
+    setIsQuestionRecording(true);
+  } catch (error) {
+    console.error(
+      'Failed to start question recording:',
+      error
+    );
+
+    questionStreamRef.current
+      ?.getTracks()
+      .forEach((track) => track.stop());
+
+    questionStreamRef.current =
+      null;
+
+    setIsQuestionRecording(false);
+
+    setQuestionError(
+      'Could not access the microphone.'
+    );
+  }
+};
+  const stopQuestionRecording = () => {
+  const recorder =
+    questionMediaRecorderRef.current;
+
+  if (
+    recorder &&
+    recorder.state !== 'inactive'
+  ) {
+    recorder.stop();
+  } else {
+    stopQuestionMicrophoneTracks();
+
+    setIsQuestionRecording(false);
+  }
+};
+
+    const askVoiceQuestion = async (
+    audioBlob: Blob
+  ) => {
+    setIsQuestionProcessing(true);
+    setQuestionError('');
+    setQuestionAnswer('');
+    setQuestionTranscript('');
+
+    try {
+      const formData = new FormData();
+
+      formData.append(
+        'audio',
+        audioBlob,
+        'question.webm'
+      );
+
+      const response = await fetch(
+        '/api/query',
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      const data = (await response.json()) as {
+        question?: string;
+        answer_text?: string;
+        audio_url?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            'Could not process your question.'
+        );
+      }
+
+      if (!data.question) {
+        throw new Error(
+          'No question transcript was returned.'
+        );
+      }
+
+      if (!data.answer_text) {
+        throw new Error(
+          'No answer was returned.'
+        );
+      }
+
+      setQuestionTranscript(
+        data.question
+      );
+
+      setQuestionAnswer(
+        data.answer_text
+      );
+
+      if (data.audio_url) {
+        setIsQuestionSpeaking(true);
+
+        const audio = new Audio(
+          data.audio_url
+        );
+
+        questionAudioRef.current =
+          audio;
+
+        audio.onended = () => {
+          setIsQuestionSpeaking(false);
+          questionAudioRef.current = null;
+        };
+
+        audio.onerror = () => {
+          setIsQuestionSpeaking(false);
+          questionAudioRef.current = null;
+
+          setQuestionError(
+            'I could not play the spoken response.'
+          );
+        };
+
+        try {
+          await audio.play();
+        } catch (error) {
+          console.error(
+            'Failed to play voice response:',
+            error
+          );
+
+          setIsQuestionSpeaking(false);
+
+          setQuestionError(
+            'The answer is ready, but I could not play the audio.'
+          );
+        }
+      }
+    } catch (error) {
+      console.error(
+        'Voice question failed:',
+        error
+      );
+
+      setQuestionError(
+        error instanceof Error
+          ? error.message
+          : 'Could not process your question.'
+      );
+    } finally {
+      setIsQuestionProcessing(false);
+    }
+  };
+    const handleQuestionMicClick = () => {
+    if (
+      isQuestionProcessing ||
+      isQuestionSpeaking
+    ) {
+      return;
+    }
+
+    if (isQuestionRecording) {
+      stopQuestionRecording();
+    } else {
+      void startQuestionRecording();
+    }
+  };
   // =========================================================
   // RECORD SCREEN
   // =========================================================
@@ -1956,7 +2285,7 @@ export default function DuukaTalkApp() {
           >
             {text(
               'Monthly',
-              "Ogw'e"
+              "Omwezi"
             )}
           </button>
         </div>
@@ -2048,11 +2377,92 @@ export default function DuukaTalkApp() {
             }`}
           />
 
-          <Mic
-            size={16}
-            className="absolute right-3 top-3 text-amber-500 cursor-pointer"
-          />
+          <button
+            type="button"
+            onClick={handleQuestionMicClick}
+            className="absolute right-3 top-2.5 text-amber-500"
+            aria-label="Ask DuukaTalk a question"
+          >
+             <Mic size={16} />
+          </button>
+
         </div>
+                
+
+        {(isQuestionRecording ||
+          isQuestionProcessing ||
+          isQuestionSpeaking ||
+          questionTranscript ||
+          questionAnswer ||
+          questionError) && (
+          <div
+            className={`rounded-xl border p-3 ${
+              isDarkMode
+                ? 'bg-slate-800/60 border-slate-700'
+                : 'bg-amber-50 border-amber-200'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Mic
+                size={15}
+                className="text-amber-500"
+              />
+
+              <span className="text-xs font-bold">
+                {isQuestionRecording
+                  ? text(
+                      'Listening…',
+                      'Mpulira…'
+                    )
+                  : isQuestionProcessing
+                    ? text(
+                        'Thinking…',
+                        'Ndowooza…'
+                      )
+                    : isQuestionSpeaking
+                      ? text(
+                          'Speaking…',
+                          'Njogera…'
+                        )
+                      : text(
+                          'Voice Assistant',
+                          'Omuyambi w’eddoboozi'
+                        )}
+              </span>
+            </div>
+
+            {questionTranscript && (
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                <span className="font-semibold">
+                  {text(
+                    'You:',
+                    'Ggwe:'
+                  )}
+                </span>{' '}
+                {questionTranscript}
+              </p>
+            )}
+
+            {questionAnswer && (
+              <p className="mt-1.5 text-xs leading-relaxed">
+                <span className="font-semibold">
+                  {text(
+                    'DuukaTalk:',
+                    'DuukaTalk:'
+                  )}
+                </span>{' '}
+                {questionAnswer}
+              </p>
+            )}
+
+            {questionError && (
+              <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                {questionError}
+              </p>
+            )}
+          </div>
+        )}
+
 
         {/* Transactions */}
         <div>
@@ -2199,19 +2609,43 @@ export default function DuukaTalkApp() {
         </div>
 
         {/* Floating Action Button */}
+                {/* Floating Voice Assistant Button */}
         <button
           type="button"
-          onClick={() =>
-            setActiveTab('record')
+          onClick={handleQuestionMicClick}
+          disabled={
+            isQuestionProcessing ||
+            isQuestionSpeaking
           }
-          className="absolute bottom-2 right-2 w-12 h-12 bg-amber-500 text-slate-950 rounded-full flex items-center justify-center shadow-lg hover:bg-amber-400 transition"
-          aria-label="Record transaction"
+          className={`absolute bottom-2 right-2 w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition ${
+            isQuestionRecording
+              ? 'bg-red-500 text-white animate-pulse'
+              : isQuestionProcessing ||
+                  isQuestionSpeaking
+                ? 'bg-amber-300 text-slate-700 cursor-not-allowed'
+                : 'bg-amber-500 text-slate-950 hover:bg-amber-400'
+          }`}
+          aria-label={
+            isQuestionRecording
+              ? 'Stop asking a question'
+              : 'Ask DuukaTalk a question'
+          }
+          aria-pressed={isQuestionRecording}
         >
-          <Mic size={22} />
+          {isQuestionProcessing ? (
+            <Loader2
+              size={22}
+              className="animate-spin"
+            />
+          ) : (
+            <Mic size={22} />
+          )}
         </button>
       </div>
     );
   };
+
+
 
   // =========================================================
   // EDIT MODAL
