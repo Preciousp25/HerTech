@@ -33,7 +33,78 @@ interface AuthApiResponse {
   businessName?: string;
   ownerName?: string;
   phone?: string;
+  country?: string;
+  currency?: string;
 }
+
+interface CountryOption {
+  name: string;
+  code: string;
+  currency: string;
+}
+
+const COUNTRY_OPTIONS: CountryOption[] = [
+  {
+    name: 'Uganda',
+    code: '+256',
+    currency: 'UGX',
+  },
+  {
+    name: 'Kenya',
+    code: '+254',
+    currency: 'KES',
+  },
+  {
+    name: 'Tanzania',
+    code: '+255',
+    currency: 'TZS',
+  },
+  {
+    name: 'Rwanda',
+    code: '+250',
+    currency: 'RWF',
+  },
+  {
+    name: 'Burundi',
+    code: '+257',
+    currency: 'BIF',
+  },
+  {
+    name: 'South Sudan',
+    code: '+211',
+    currency: 'SSP',
+  },
+  {
+    name: 'Democratic Republic of the Congo',
+    code: '+243',
+    currency: 'CDF',
+  },
+  {
+    name: 'Nigeria',
+    code: '+234',
+    currency: 'NGN',
+  },
+  {
+    name: 'Ghana',
+    code: '+233',
+    currency: 'GHS',
+  },
+  {
+    name: 'South Africa',
+    code: '+27',
+    currency: 'ZAR',
+  },
+  {
+    name: 'United Kingdom',
+    code: '+44',
+    currency: 'GBP',
+  },
+  {
+    name: 'United States',
+    code: '+1',
+    currency: 'USD',
+  },
+];
 
 function LoginContent() {
   const router = useRouter();
@@ -49,6 +120,10 @@ function LoginContent() {
   const [businessName, setBusinessName] = useState('');
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
+
+  const [country, setCountry] = useState('Uganda');
+  const [phone, setPhone] = useState('');
+
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,7 +138,9 @@ function LoginContent() {
    */
   useEffect(() => {
     const nextMode: AuthMode =
-      searchParams.get('mode') === 'login' ? 'login' : 'signup';
+      searchParams.get('mode') === 'login'
+        ? 'login'
+        : 'signup';
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMode(nextMode);
@@ -85,18 +162,31 @@ function LoginContent() {
     }
   }, []);
 
-  const text = (english: string, legacyLuganda?: string) => {
+  const text = (
+    english: string,
+    legacyLuganda?: string,
+  ) => {
     void legacyLuganda;
     return translate(language, english);
   };
 
-  const formatLockoutMessage = (lockedUntil: string): string => {
+  const selectedCountry =
+    COUNTRY_OPTIONS.find(
+      (option) => option.name === country,
+    ) || COUNTRY_OPTIONS[0];
+
+  const formatLockoutMessage = (
+    lockedUntil: string,
+  ): string => {
     const unlockDate = new Date(lockedUntil);
 
-    const timeLabel = unlockDate.toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const timeLabel = unlockDate.toLocaleTimeString(
+      [],
+      {
+        hour: '2-digit',
+        minute: '2-digit',
+      },
+    );
 
     return text(
       `Too many incorrect attempts. Please try again after ${timeLabel}.`,
@@ -132,24 +222,68 @@ function LoginContent() {
       return;
     }
 
+    if (isSignup) {
+      if (!country) {
+        setError(
+          text(
+            'Select your country to continue.',
+            'Londa eggwanga lyo okweyongerayo.',
+          ),
+        );
+        return;
+      }
+
+      const cleanedPhone = phone.replace(/\D/g, '');
+
+      if (!cleanedPhone) {
+        setError(
+          text(
+            'Enter your phone number to continue.',
+            'Yingiza ennamba yo ey’essimu okweyongerayo.',
+          ),
+        );
+        return;
+      }
+
+      if (cleanedPhone.length < 7) {
+        setError(
+          text(
+            'Enter a valid phone number.',
+            'Yingiza ennamba y’essimu entuufu.',
+          ),
+        );
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
       if (isSignup) {
-        const response = await fetch('/api/auth/signup', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            businessName: businessName.trim(),
-            pin,
-          }),
-        });
+        const cleanedPhone = phone.replace(/\D/g, '');
 
-        const data = (await response.json().catch(() => null)) as
-          | AuthApiResponse
-          | null;
+        const fullPhoneNumber = `${selectedCountry.code}${cleanedPhone}`;
+
+        const response = await fetch(
+          '/api/auth/signup',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              businessName: businessName.trim(),
+              pin,
+              phone: fullPhoneNumber,
+              country: selectedCountry.name,
+              currency: selectedCountry.currency,
+            }),
+          },
+        );
+
+        const data = (await response.json().catch(
+          () => null,
+        )) as AuthApiResponse | null;
 
         if (!response.ok || !data?.success) {
           setError(
@@ -175,29 +309,41 @@ function LoginContent() {
 
       // Login
       // The API requires BOTH the business name and PIN.
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetch(
+        '/api/auth/login',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            businessName: businessName.trim(),
+            pin,
+          }),
         },
-        body: JSON.stringify({
-          businessName: businessName.trim(),
-          pin,
-        }),
-      });
+      );
 
-      const data = (await response.json().catch(() => null)) as
-        | AuthApiResponse
-        | null;
+      const data = (await response.json().catch(
+        () => null,
+      )) as AuthApiResponse | null;
 
       if (!response.ok || !data?.success) {
         if (data?.lockedUntil) {
-          setError(formatLockoutMessage(data.lockedUntil));
-        } else if (typeof data?.attemptsRemaining === 'number') {
+          setError(
+            formatLockoutMessage(
+              data.lockedUntil,
+            ),
+          );
+        } else if (
+          typeof data?.attemptsRemaining ===
+          'number'
+        ) {
           setError(
             text(
               `Incorrect PIN. ${data.attemptsRemaining} attempt${
-                data.attemptsRemaining === 1 ? '' : 's'
+                data.attemptsRemaining === 1
+                  ? ''
+                  : 's'
               } remaining.`,
               `PIN nkyamu. Ogenda kusigalako emirundi ${data.attemptsRemaining}.`,
             ),
@@ -221,9 +367,12 @@ function LoginContent() {
         JSON.stringify({
           vendorId: data.vendorId,
           businessName:
-            data.businessName || businessName.trim(),
+            data.businessName ||
+            businessName.trim(),
           ownerName: data.ownerName || '',
           phone: data.phone || '',
+          country: data.country || '',
+          currency: data.currency || '',
         }),
       );
 
@@ -393,7 +542,10 @@ function LoginContent() {
                     'Welcome to DuukaTalk',
                     'Tuyambalidde DuukaTalk',
                   )
-                : text('Welcome back', 'Tuyanjula')}
+                : text(
+                    'Welcome back',
+                    'Tuyanjula',
+                  )}
             </p>
 
             <h2 className="text-3xl font-bold tracking-tight text-blue-950 sm:text-4xl">
@@ -424,7 +576,9 @@ function LoginContent() {
           <div className="mb-8 grid grid-cols-2 rounded-xl bg-slate-200/80 p-1">
             <button
               type="button"
-              onClick={() => switchMode('signup')}
+              onClick={() =>
+                switchMode('signup')
+              }
               className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                 isSignup
                   ? 'bg-white text-blue-950 shadow-sm'
@@ -436,7 +590,9 @@ function LoginContent() {
 
             <button
               type="button"
-              onClick={() => switchMode('login')}
+              onClick={() =>
+                switchMode('login')
+              }
               className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                 !isSignup
                   ? 'bg-white text-blue-950 shadow-sm'
@@ -475,7 +631,9 @@ function LoginContent() {
                   autoComplete="organization"
                   value={businessName}
                   onChange={(event) =>
-                    setBusinessName(event.target.value)
+                    setBusinessName(
+                      event.target.value,
+                    )
                   }
                   placeholder={text(
                     "e.g. Mama Kintu's Shop",
@@ -485,6 +643,91 @@ function LoginContent() {
                 />
               </div>
             </div>
+
+            {isSignup && (
+              <>
+                <div>
+                  <label
+                    htmlFor="country"
+                    className="mb-2 block text-sm font-semibold text-slate-700"
+                  >
+                    {text(
+                      'Country',
+                      'Eggwanga',
+                    )}
+                  </label>
+
+                  <select
+                    id="country"
+                    value={country}
+                    onChange={(event) =>
+                      setCountry(event.target.value)
+                    }
+                    className="h-13 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10"
+                  >
+                    {COUNTRY_OPTIONS.map(
+                      (option) => (
+                        <option
+                          key={option.name}
+                          value={option.name}
+                        >
+                          {option.name} (
+                          {option.currency})
+                        </option>
+                      ),
+                    )}
+                  </select>
+
+                  <p className="mt-2 text-xs text-slate-400">
+                    {text(
+                      `Currency: ${selectedCountry.currency}`,
+                      `Ssente: ${selectedCountry.currency}`,
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="phone-number"
+                    className="mb-2 block text-sm font-semibold text-slate-700"
+                  >
+                    {text(
+                      'Phone number',
+                      'Ennamba y’essimu',
+                    )}
+                  </label>
+
+                  <div className="flex gap-2">
+                    <div className="flex h-13 w-24 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+                      {selectedCountry.code}
+                    </div>
+
+                    <input
+                      id="phone-number"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      value={phone}
+                      onChange={(event) =>
+                        setPhone(
+                          event.target.value
+                            .replace(/\D/g, ''),
+                        )
+                      }
+                      placeholder="700 000 000"
+                      className="h-13 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10"
+                    />
+                  </div>
+
+                  <p className="mt-2 text-xs text-slate-400">
+                    {text(
+                      `Your number will be saved as ${selectedCountry.code}${phone || '...'}.`,
+                      `Ennamba yo ejja kuterekebwa nga ${selectedCountry.code}${phone || '...'}.`,
+                    )}
+                  </p>
+                </div>
+              </>
+            )}
 
             <div>
               <div className="mb-2 flex items-center justify-between">
@@ -514,7 +757,11 @@ function LoginContent() {
 
                 <input
                   id="business-pin"
-                  type={showPin ? 'text' : 'password'}
+                  type={
+                    showPin
+                      ? 'text'
+                      : 'password'
+                  }
                   inputMode="numeric"
                   autoComplete={
                     isSignup
@@ -538,12 +785,20 @@ function LoginContent() {
                 <button
                   type="button"
                   onClick={() =>
-                    setShowPin((visible) => !visible)
+                    setShowPin(
+                      (visible) => !visible,
+                    )
                   }
                   aria-label={
                     showPin
-                      ? text('Hide PIN', 'Kisa PIN')
-                      : text('Show PIN', 'Laga PIN')
+                      ? text(
+                          'Hide PIN',
+                          'Kisa PIN',
+                        )
+                      : text(
+                          'Show PIN',
+                          'Laga PIN',
+                        )
                   }
                   className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                 >
@@ -591,7 +846,10 @@ function LoginContent() {
                         'Create my account',
                         'Tondawo akaawunti yange',
                       )
-                    : text('Log in', 'Yingira')}
+                    : text(
+                        'Log in',
+                        'Yingira',
+                      )}
 
                   <ArrowRight size={18} />
                 </>
