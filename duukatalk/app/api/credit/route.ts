@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { isOutstandingCredit, normalizeCustomerName } from "@/lib/credit";
+import {
+  isOutstandingCredit,
+  normalizeCustomerName,
+} from "@/lib/credit";
+import { settleCustomerCredit } from "@/lib/updateCustomerCredit";
 
 const AUTH_COOKIE_NAME = "duukatalk_vendor_id";
-const DEMO_VENDOR_ID = "vendor_001";
 
 interface CreditTransaction {
   id: string;
@@ -18,24 +26,49 @@ interface CreditTransaction {
 
 export async function GET(request: NextRequest) {
   try {
-    const vendorId = request.cookies.get(AUTH_COOKIE_NAME)?.value || DEMO_VENDOR_ID;
-    const snapshot = await getDocs(query(
+    // Get the currently logged-in vendor
+    const vendorId = request.cookies.get(AUTH_COOKIE_NAME)?.value;
+
+    if (!vendorId) {
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
+    // Only fetch transactions belonging to this vendor
+    const transactionsQuery = query(
       collection(db, "transactions"),
       where("vendor_id", "==", vendorId)
-    ));
+    );
+
+    const snapshot = await getDocs(transactionsQuery);
 
     const transactions: CreditTransaction[] = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...(doc.data() as Omit<CreditTransaction, "id">),
     }));
 
-    const balances: Record<string, { customerName: string; owed: number; dueDates: string[] }> = {};
+    const balances: Record<
+      string,
+      {
+        customerName: string;
+        owed: number;
+        dueDates: string[];
+      }
+    > = {};
 
     for (const txn of transactions) {
-      if (!isOutstandingCredit(txn)) continue;
+      // Only include genuinely outstanding credit transactions
+      if (!isOutstandingCredit(txn)) {
+        continue;
+      }
 
       const name = String(txn.customer_name || "Unknown");
       const amount = Number(txn.total_amount) || 0;
+
+      // Normalize names so variations such as "John Doe" and
+      // " john doe " are treated as the same customer.
       const key = normalizeCustomerName(name);
 
       if (!balances[key]) {
@@ -64,9 +97,42 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ customers });
   } catch (error) {
     console.error("Failed to fetch credit balances:", error);
+
     return NextResponse.json(
       { error: "Failed to fetch credit balances" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
+
+export async function POST(request: Request) {
+  try {
+    const body = (await request.json()) as {
+      customerName?: string;
+    };
+
+    const customerName = body.customerName?.trim();
+
+    if (!customerName) {
+      return NextResponse.json(
+        { error: "customerName is required" },
+        { status: 400 }
+      );
+    }
+
+    const result = await settleCustomerCredit(customerName);
+
+    return NextResponse.json({
+      customerName,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Failed to settle customer credit:", error);
+
+    return NextResponse.json(
+      { error: "Failed to record payment" },
+      { status: 500 }
+    );
+  }
+}
+
