@@ -23,8 +23,9 @@ const SUNBIRD_CHAT_URL =
   "https://api.sunbird.ai/tasks/chat/completions";
 
 /**
- * Prompt used by Sunflower to extract transaction information
- * from the transcript returned by Sunbird Speech-to-Text.
+ * Prompt used by Sunflower (and, as a fallback, Gemini) to extract
+ * transaction information from the transcript returned by Sunbird
+ * Speech-to-Text.
  *
  * Every field is nullable so the model always has a valid JSON shape
  * to return, even when the transcript is ambiguous, incomplete, or
@@ -40,13 +41,13 @@ The transcript may contain English, Luganda, Swahili, or a mixture of these lang
 Extract the transaction details into EXACTLY this JSON structure:
 
 {
-  "item": null,
-  "quantity": null,
-  "unit": null,
-  "unitPrice": null,
-  "customerName": null,
-  "paymentType": null,
-  "dueDate": null
+  "item": string or null,
+  "quantity": number or null,
+  "unit": string or null,
+  "unitPrice": number or null,
+  "customerName": string or null,
+  "paymentType": "cash" or "credit" or null,
+  "dueDate": string or null
 }
 
 Rules:
@@ -103,6 +104,12 @@ Example when information is missing:
  * 2. Sunflower extracts structured transaction fields from the transcript.
  *    These fields may be incomplete — the caller decides what to do
  *    with a partial extraction.
+ *
+ * If Sunflower fails to return parseable structured JSON and
+ * GEMINI_API_KEY is configured, extraction is retried once with Gemini
+ * as a fallback. If Gemini also fails, that failure is surfaced as a
+ * clear, provider-agnostic error rather than letting either provider's
+ * raw SDK error propagate uncaught.
  */
 class SunbirdProvider implements AiProvider {
   private apiKey: string;
@@ -206,6 +213,7 @@ class SunbirdProvider implements AiProvider {
 
   /**
    * Send the transcript to Sunflower for transaction extraction.
+   * Falls back to Gemini if Sunflower fails to return structured JSON.
    */
   private async extractTransaction(
     transcript: string
@@ -259,15 +267,32 @@ class SunbirdProvider implements AiProvider {
 
     try {
       return parseExtractedFields(rawContent);
-    } catch (error) {
+    } catch (sunflowerError) {
       if (!process.env.GEMINI_API_KEY) {
-        throw error;
+        throw sunflowerError;
       }
 
       console.warn(
         "Sunflower did not return structured JSON; retrying extraction with Gemini"
       );
-      return this.extractWithGemini(transcript);
+
+      try {
+        return await this.extractWithGemini(transcript);
+      } catch (geminiError) {
+        // Both providers failed. Surface one clear error instead of
+        // letting either provider's raw SDK error propagate uncaught,
+        // and keep both underlying messages for debugging.
+        const sunflowerMessage =
+          sunflowerError instanceof Error ? sunflowerError.message : String(sunflowerError);
+        const geminiMessage =
+          geminiError instanceof Error ? geminiError.message : String(geminiError);
+
+        console.error("Gemini fallback also failed:", geminiMessage);
+
+        throw new Error(
+          `Transaction extraction failed on both providers. Sunflower: ${sunflowerMessage} | Gemini: ${geminiMessage}`
+        );
+      }
     }
   }
 
@@ -276,7 +301,11 @@ class SunbirdProvider implements AiProvider {
   ): Promise<ExtractedFields> {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      // Google retired gemini-2.0-flash on June 1, 2026. Keep this in
+      // sync with Google's current model list if it changes again —
+      // consider a non-dated alias (e.g. "gemini-flash-latest") if the
+      // SDK supports one, to avoid another hard outage on retirement.
+      model: "gemini-3.6-flash",
       systemInstruction: `${EXTRACTION_PROMPT}\nToday's date is ${new Date().toISOString().slice(0, 10)}.`,
       generationConfig: { responseMimeType: "application/json" },
     });
@@ -411,7 +440,7 @@ class SunbirdProvider implements AiProvider {
 }
 
 /**
- * Parse the JSON returned by Sunflower into ExtractedFields.
+ * Parse the JSON returned by Sunflower or Gemini into ExtractedFields.
  * Throws only for genuinely malformed output (invalid JSON, wrong
  * field types) — legitimately null fields are not an error here.
  */
@@ -426,12 +455,12 @@ function parseExtractedFields(
     parsed = JSON.parse(cleaned);
   } catch {
     console.error(
-      "Invalid JSON returned by Sunflower:",
+      "Invalid JSON returned by model:",
       rawContent
     );
 
     throw new Error(
-      "Sunflower did not return valid transaction JSON"
+      "Model did not return valid transaction JSON"
     );
   }
 
@@ -475,6 +504,9 @@ function cleanJsonResponse(
  * SUNBIRD_API_KEY=your_key_here
  *
  * SUNBIRD_LANGUAGE=eng
+ *
+ * GEMINI_API_KEY=your_key_here (optional — enables fallback extraction
+ * if Sunflower fails to return structured JSON)
  */
 export function getAiProvider(): AiProvider {
   const providerName =
