@@ -159,49 +159,73 @@ export async function removeOfflineVoiceNote(id: string): Promise<void> {
 }
 
 // Sends each queued voice note through the same pipeline uploadRecording() uses:
-// transcribe+extract via /api/voice-to-json, then save to /api/ledger. Stops on
-// first failure so nothing gets skipped out of order, same as syncOfflineTransactions().
-export async function syncOfflineVoiceNotes(): Promise<{ synced: number; remaining: number }> {
+// transcribe+extract via /api/voice-to-json, then save to /api/ledger.
+// Unlike syncOfflineTransactions(), this does NOT stop on first failure — a
+// broken/unreadable note would otherwise block every note behind it forever.
+// Each note is logged and removed on failure so the queue always drains.
+export async function syncOfflineVoiceNotes(): Promise<{ synced: number; remaining: number; failed: number }> {
   const queued = await listOfflineVoiceNotes();
   let synced = 0;
+  let failed = 0;
 
   for (const note of queued) {
-    const formData = new FormData();
-    formData.append("audio", note.audioBlob, `queued-${note.id}.webm`);
+    try {
+      const formData = new FormData();
+      formData.append("audio", note.audioBlob, `queued-${note.id}.webm`);
 
-    const extractResponse = await fetch("/api/voice-to-json", {
-      method: "POST",
-      body: formData,
-    });
-    if (!extractResponse.ok) break;
+      const extractResponse = await fetch("/api/voice-to-json", {
+        method: "POST",
+        body: formData,
+      });
+      if (!extractResponse.ok) {
+        console.error(`Voice note ${note.id} failed at transcription:`, extractResponse.status, await extractResponse.text().catch(() => ""));
+        await removeOfflineVoiceNote(note.id);
+        failed += 1;
+        continue;
+      }
 
-    const data = (await extractResponse.json().catch(() => null)) as
-      | { success?: boolean; transaction?: Record<string, unknown> }
-      | null;
-    const transaction = data?.success ? data.transaction : null;
-    if (!transaction) break;
+      const data = (await extractResponse.json().catch(() => null)) as
+        | { success?: boolean; transaction?: Record<string, unknown>; error?: string }
+        | null;
+      const transaction = data?.success ? data.transaction : null;
+      if (!transaction) {
+        console.error(`Voice note ${note.id} produced no transaction:`, data?.error);
+        await removeOfflineVoiceNote(note.id);
+        failed += 1;
+        continue;
+      }
 
-    const customer = (transaction.customerName as string | null) || "Unknown customer";
-    const quantity = typeof transaction.quantity === "number" ? transaction.quantity : 1;
-    const unitPrice = typeof transaction.unitPrice === "number" ? transaction.unitPrice : 0;
+      const customer = (transaction.customerName as string | null) || "Unknown customer";
+      const quantity = typeof transaction.quantity === "number" ? transaction.quantity : 1;
+      const unitPrice = typeof transaction.unitPrice === "number" ? transaction.unitPrice : 0;
 
-    const ledgerResponse = await fetch("/api/ledger", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        customer,
-        item: (transaction.item as string) || "Recorded item",
-        amount: quantity * unitPrice,
-        paymentType: transaction.paymentType === "credit" ? "credit" : "cash",
-        dueDate: transaction.dueDate ?? null,
-      }),
-    });
-    if (!ledgerResponse.ok) break;
+      const ledgerResponse = await fetch("/api/ledger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer,
+          item: (transaction.item as string) || "Recorded item",
+          amount: quantity * unitPrice,
+          paymentType: transaction.paymentType === "credit" ? "credit" : "cash",
+          dueDate: transaction.dueDate ?? null,
+        }),
+      });
+      if (!ledgerResponse.ok) {
+        console.error(`Voice note ${note.id} failed at ledger save:`, ledgerResponse.status, await ledgerResponse.text().catch(() => ""));
+        await removeOfflineVoiceNote(note.id);
+        failed += 1;
+        continue;
+      }
 
-    await removeOfflineVoiceNote(note.id);
-    synced += 1;
+      await removeOfflineVoiceNote(note.id);
+      synced += 1;
+    } catch (err) {
+      console.error(`Voice note ${note.id} threw an error during sync:`, err);
+      await removeOfflineVoiceNote(note.id);
+      failed += 1;
+    }
   }
 
   const remaining = (await listOfflineVoiceNotes()).length;
-  return { synced, remaining };
+  return { synced, remaining, failed };
 }

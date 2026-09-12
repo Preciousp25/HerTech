@@ -2,24 +2,23 @@ import {
   collection,
   doc,
   getDocs,
-  query,
   setDoc,
-  where,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { isOutstandingCredit } from "./credit";
+import { isOutstandingCredit, normalizeCustomerName } from "./credit";
 
 const TRANSACTIONS_COLLECTION = "transactions";
 const CUSTOMERS_COLLECTION = "customers";
 
 async function getCustomerTransactions(customerName: string) {
-  const transactionsRef = collection(db, TRANSACTIONS_COLLECTION);
-  const customerQuery = query(
-    transactionsRef,
-    where("customer_name", "==", customerName),
-  );
-  return getDocs(customerQuery);
+  const snapshot = await getDocs(collection(db, TRANSACTIONS_COLLECTION));
+  const requestedKey = normalizeCustomerName(customerName);
+
+  return snapshot.docs.filter((docSnap) => {
+    const storedName = normalizeCustomerName(docSnap.data().customer_name ?? "");
+    return storedName === requestedKey;
+  });
 }
 
 /**
@@ -34,16 +33,18 @@ export async function updateCustomerCredit(
   try {
     const snapshot = await getCustomerTransactions(customerName);
 
-    const totalCredit = snapshot.docs.reduce((sum, docSnap) => {
+    const totalCredit = snapshot.reduce((sum, docSnap) => {
       const data = docSnap.data();
       if (!isOutstandingCredit(data)) return sum;
       return sum + (Number(data.total_amount) || 0);
     }, 0);
 
-    const customerRef = doc(db, CUSTOMERS_COLLECTION, customerName);
+    const customerKey = normalizeCustomerName(customerName);
+    const customerRef = doc(db, CUSTOMERS_COLLECTION, customerKey);
     await setDoc(
       customerRef,
       {
+        customer_name: customerName.trim(),
         outstanding_credit: totalCredit,
         updated_at: new Date().toISOString(),
       },
@@ -71,7 +72,7 @@ export async function settleCustomerCredit(customerName: string): Promise<{
   let paidAmount = 0;
   let updates = 0;
 
-  for (const docSnap of snapshot.docs) {
+  for (const docSnap of snapshot) {
     const data = docSnap.data();
     if (!isOutstandingCredit(data)) continue;
     paidAmount += Number(data.total_amount) || 0;

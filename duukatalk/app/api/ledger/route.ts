@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   setDoc,
@@ -12,6 +13,8 @@ import { toFirestoreTransaction } from "@/lib/firestore-transaction";
 import { notifyAfterTransaction } from "@/lib/notify-transaction";
 import { updateCustomerCredit } from "@/lib/updateCustomerCredit";
 import { getNextTransactionId } from "@/lib/transaction-id";
+import { localize, parseLanguage } from "@/lib/risk-flags";
+import { CREDIT_LIMIT, normalizeCustomerName } from "@/lib/credit";
 
 const AUTH_COOKIE_NAME = "duukatalk_vendor_id";
 
@@ -68,9 +71,12 @@ export async function POST(request: NextRequest) {
       payment_type?: "cash" | "credit";
       dueDate?: string | null;
       phone?: string | null;
+      language?: string;
+      acknowledgedWarning?: boolean;
     };
 
     const customer = (body.customer ?? body.customer_name)?.trim();
+    const customerKey = normalizeCustomerName(customer);
     const item = body.item?.trim();
     const amount = Number(body.amount ?? body.total_amount);
 
@@ -88,9 +94,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const language = parseLanguage(body.language);
+
+    if (paymentType === "credit") {
+      const customerRef = doc(db, "customers", customerKey);
+      const customerSnap = await getDoc(customerRef);
+      const outstandingCredit = customerSnap.exists()
+        ? Number(customerSnap.data().outstanding_credit || 0)
+        : 0;
+
+      if (
+        outstandingCredit >= CREDIT_LIMIT &&
+        body.acknowledgedWarning !== true
+      ) {
+        return NextResponse.json(
+          {
+            error: localize(
+              language,
+              `Warning: ${customer} already has UGX ${outstandingCredit.toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Pause new lending and recover cash first. Use the tick to accept the warning and record, or use the cross to refuse.`,
+              `Okulabula: ${customer} alina amabanja agasigadde UGX ${outstandingCredit.toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Lekeka okukuza obulava obupya era funya ssente. Kozesa akatikkulu okukkiriza okulabula n'okuwandiika, oba akamukiye okugaana.`,
+            ),
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     const transactionId = await getNextTransactionId();
     const timestamp = new Date().toISOString();
-    const transactionRef = doc(db, "transactions", transactionId);
+    const transactionRef = doc(
+      db,
+      "transactions",
+      transactionId
+    );
 
     const firestoreTransaction = toFirestoreTransaction(
       {
@@ -128,6 +164,7 @@ export async function POST(request: NextRequest) {
       dueDate: firestoreTransaction.due_date,
       outstandingCredit,
       customerPhone: body.phone,
+      language: parseLanguage(body.language),
     });
 
     return NextResponse.json(
@@ -149,3 +186,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

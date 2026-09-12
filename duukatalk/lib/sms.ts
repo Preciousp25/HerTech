@@ -5,6 +5,9 @@ export function normalizePhone(raw: string): string | null {
   if (!digits) return null;
 
   if (digits.startsWith("+")) return digits;
+  // Uganda-specific fallbacks below. If #4's language expansion (Acholi,
+  // Ateso, Kiswahili) ever brings in customers outside Uganda, this will
+  // mis-normalize their numbers silently — revisit before broadening scope.
   if (digits.startsWith("256") && digits.length >= 12) return `+${digits}`;
   if (digits.startsWith("0") && digits.length >= 10) return `+256${digits.slice(1)}`;
   if (digits.length === 9) return `+256${digits}`;
@@ -18,6 +21,7 @@ export function isSmsConfigured(): boolean {
 export async function sendSms(to: string, message: string): Promise<{ sent: boolean; skipped?: string; error?: string }> {
   const phone = normalizePhone(to);
   if (!phone) {
+    console.warn(`Africa's Talking SMS skipped: could not normalize phone "${to}".`);
     return { sent: false, skipped: "invalid_phone" };
   }
 

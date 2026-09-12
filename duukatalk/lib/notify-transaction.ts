@@ -1,28 +1,13 @@
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { CREDIT_LIMIT, LARGE_QUANTITY_THRESHOLD } from "./credit";
+import { doc, setDoc } from "firebase/firestore";
+import { dispatchVendorAlertSms, resolveCustomerPhone } from "./dispatch-vendor-alerts";
 import { db } from "./firebase";
+import { Language, localize } from "./risk-flags";
 import { sendSms } from "./sms";
-
-async function resolveCustomerPhone(
-  customerName: string,
-  explicitPhone?: string | null,
-): Promise<string | null> {
-  if (explicitPhone?.trim()) return explicitPhone.trim();
-
-  try {
-    const customerSnap = await getDoc(doc(db, "customers", customerName));
-    const stored = customerSnap.exists() ? customerSnap.data().phone : undefined;
-    if (typeof stored === "string" && stored.trim()) return stored.trim();
-  } catch (error) {
-    console.error("Failed to look up customer phone:", error);
-  }
-
-  return process.env.AT_DEMO_CUSTOMER_PHONE?.trim() || null;
-}
+import { normalizeCustomerName } from "./credit";
 
 export async function rememberCustomerPhone(customerName: string, phone: string): Promise<void> {
   await setDoc(
-    doc(db, "customers", customerName),
+    doc(db, "customers", normalizeCustomerName(customerName)),
     { phone, updated_at: new Date().toISOString() },
     { merge: true },
   );
@@ -37,10 +22,10 @@ export async function notifyAfterTransaction(input: {
   dueDate?: string | null;
   outstandingCredit?: number;
   customerPhone?: string | null;
-}): Promise<{ debtorSms: boolean; vendorAlerts: number }> {
+  language?: Language;
+}): Promise<{ debtorSms: boolean; vendorAlerts: number; customerAlerts: number }> {
   let debtorSms = false;
-  let vendorAlerts = 0;
-  const vendorPhone = process.env.AT_VENDOR_PHONE?.trim();
+  const language = input.language ?? "EN";
 
   if (input.paymentType === "credit" && input.customerName) {
     const customerPhone = await resolveCustomerPhone(input.customerName, input.customerPhone);
@@ -52,31 +37,24 @@ export async function notifyAfterTransaction(input: {
       }
     }
 
-    const due = input.dueDate && input.dueDate !== "N/A" ? ` Pay by ${input.dueDate}.` : "";
-    const debtorMessage = `DuukaTalk: You owe UGX ${input.amount.toLocaleString()} for ${input.item}.${due} — from your vendor.`;
+    const dueEn = input.dueDate && input.dueDate !== "N/A" ? ` Pay by ${input.dueDate}.` : "";
+    const dueLug = input.dueDate && input.dueDate !== "N/A" ? ` Sasula nga ${input.dueDate}.` : "";
+    const debtorMessage = localize(
+      "MIX",
+      `DuukaTalk: You owe UGX ${input.amount.toLocaleString()} for ${input.item}.${dueEn} — from your vendor.`,
+      `DuukaTalk: Olina omubanja gwa UGX ${input.amount.toLocaleString()} ku ${input.item}.${dueLug} — okuva ku katale ko.`,
+    );
 
     if (customerPhone) {
       const result = await sendSms(customerPhone, debtorMessage);
       debtorSms = result.sent;
     }
-
-    const outstanding = input.outstandingCredit ?? input.amount;
-    if (vendorPhone && outstanding > CREDIT_LIMIT) {
-      const result = await sendSms(
-        vendorPhone,
-        `DuukaTalk alert: ${input.customerName} now owes UGX ${outstanding.toLocaleString()}, over the ${CREDIT_LIMIT.toLocaleString()} limit.`,
-      );
-      if (result.sent) vendorAlerts += 1;
-    }
   }
 
-  if (vendorPhone && input.quantity > LARGE_QUANTITY_THRESHOLD) {
-    const result = await sendSms(
-      vendorPhone,
-      `DuukaTalk alert: unusually large quantity recorded for ${input.item} (${input.quantity}).`,
-    );
-    if (result.sent) vendorAlerts += 1;
-  }
-
-  return { debtorSms, vendorAlerts };
+  const alerts = await dispatchVendorAlertSms(language);
+  return {
+    debtorSms,
+    vendorAlerts: alerts.vendorAlerts,
+    customerAlerts: alerts.customerAlerts,
+  };
 }
