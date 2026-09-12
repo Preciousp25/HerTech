@@ -4,6 +4,7 @@ import { db } from "@/lib/firebase";
 import {
   buildLoanGuidance,
   isOutstandingCredit,
+  normalizeCustomerName,
   parseGuidanceLanguage,
 } from "@/lib/credit";
 
@@ -17,6 +18,17 @@ export async function GET(request: NextRequest) {
 		let totalCreditOutstanding = 0;
 		const perCustomerCredit: Record<string, number> = {};
 
+		const customerSnapshot = await getDocs(collection(db, "customers"));
+		for (const customerDoc of customerSnapshot.docs) {
+			const customer = customerDoc.data();
+			const profileName = String(customer.customer_name || customerDoc.id || "Unknown");
+			const profileKey = normalizeCustomerName(profileName);
+			const profileBalance = Number(customer.outstanding_credit || 0);
+			if (profileBalance > 0) {
+				perCustomerCredit[profileKey] = profileBalance;
+			}
+		}
+
 		for (const txn of transactions) {
 			const amount = Number(txn.total_amount) || 0;
 
@@ -28,7 +40,8 @@ export async function GET(request: NextRequest) {
 				totalCreditOutstanding += amount;
 
 				const name = txn.customer_name || "Unknown";
-				perCustomerCredit[name] = (perCustomerCredit[name] || 0) + amount;
+				const key = normalizeCustomerName(name);
+				perCustomerCredit[key] = (perCustomerCredit[key] || 0) + amount;
 			}
 		}
 

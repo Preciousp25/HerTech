@@ -3,10 +3,11 @@ import { dispatchVendorAlertSms, resolveCustomerPhone } from "./dispatch-vendor-
 import { db } from "./firebase";
 import { Language, localize } from "./risk-flags";
 import { sendSms } from "./sms";
+import { normalizeCustomerName } from "./credit";
 
 export async function rememberCustomerPhone(customerName: string, phone: string): Promise<void> {
   await setDoc(
-    doc(db, "customers", customerName),
+    doc(db, "customers", normalizeCustomerName(customerName)),
     { phone, updated_at: new Date().toISOString() },
     { merge: true },
   );

@@ -6,7 +6,7 @@ import { notifyAfterTransaction } from "@/lib/notify-transaction";
 import { updateCustomerCredit } from "@/lib/updateCustomerCredit";
 import { getNextTransactionId } from "@/lib/transaction-id";
 import { localize, parseLanguage } from "@/lib/risk-flags";
-import { CREDIT_LIMIT } from "@/lib/credit";
+import { CREDIT_LIMIT, normalizeCustomerName } from "@/lib/credit";
 
 export async function GET() {
   try {
@@ -39,9 +39,11 @@ export async function POST(request: NextRequest) {
       dueDate?: string | null;
       phone?: string | null;
       language?: string;
+      acknowledgedWarning?: boolean;
     };
 
     const customer = (body.customer ?? body.customer_name)?.trim();
+    const customerKey = normalizeCustomerName(customer);
     const item = body.item?.trim();
     const amount = Number(body.amount ?? body.total_amount);
     const paymentType =
@@ -57,19 +59,19 @@ export async function POST(request: NextRequest) {
     const language = parseLanguage(body.language);
 
     if (paymentType === "credit") {
-      const customerRef = doc(db, "customers", customer);
+      const customerRef = doc(db, "customers", customerKey);
       const customerSnap = await getDoc(customerRef);
       const outstandingCredit = customerSnap.exists()
         ? Number(customerSnap.data().outstanding_credit || 0)
         : 0;
 
-      if (outstandingCredit >= CREDIT_LIMIT) {
+      if (outstandingCredit >= CREDIT_LIMIT && body.acknowledgedWarning !== true) {
         return NextResponse.json(
           {
             error: localize(
               language,
-              `Warning: ${customer} already has UGX ${outstandingCredit.toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Pause new lending and recover cash first.`,
-              `Okulabula: ${customer} alina amabanja agasigadde UGX ${outstandingCredit.toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Lekeka okukuza obulava obupya era funya ssente.`,
+              `Warning: ${customer} already has UGX ${outstandingCredit.toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Pause new lending and recover cash first. Use the tick to accept the warning and record, or use the cross to refuse.`,
+              `Okulabula: ${customer} alina amabanja agasigadde UGX ${outstandingCredit.toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Lekeka okukuza obulava obupya era funya ssente. Kozesa akatikkulu okukkiriza okulabula n'okuwandiika, oba akamukiye okugaana.`,
             ),
           },
           { status: 409 },

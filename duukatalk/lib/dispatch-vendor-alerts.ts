@@ -1,5 +1,5 @@
 import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
-import { CREDIT_LIMIT } from "./credit";
+import { CREDIT_LIMIT, normalizeCustomerName } from "./credit";
 import { db } from "./firebase";
 import {
   Language,
@@ -28,7 +28,7 @@ export async function resolveCustomerPhone(
   if (explicitPhone?.trim()) return explicitPhone.trim();
 
   try {
-    const customerSnap = await getDoc(doc(db, "customers", customerName));
+    const customerSnap = await getDoc(doc(db, "customers", normalizeCustomerName(customerName)));
     const stored = customerSnap.exists() ? customerSnap.data().phone : undefined;
     if (typeof stored === "string" && stored.trim()) return stored.trim();
   } catch (error) {
@@ -91,6 +91,22 @@ async function sendOnce(options: {
   if (!result.sent) return false;
   await markSent(options.docId, options.fingerprint, options.extra);
   return true;
+}
+
+export async function getAlertSummary(): Promise<{ vendorAlerts: number; customerAlerts: number; flags: number }> {
+  const snapshot = await getDocs(collection(db, SMS_ALERTS_COLLECTION));
+  let vendorAlerts = 0;
+  let customerAlerts = 0;
+  const flagIds = new Set<string>();
+
+  for (const docSnap of snapshot.docs) {
+    const data = docSnap.data() as { channel?: string; flag_id?: string };
+    if (data.channel === 'vendor') vendorAlerts += 1;
+    if (data.channel === 'customer') customerAlerts += 1;
+    if (data.flag_id) flagIds.add(String(data.flag_id));
+  }
+
+  return { vendorAlerts, customerAlerts, flags: flagIds.size };
 }
 
 export async function dispatchVendorAlertSms(

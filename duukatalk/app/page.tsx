@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { normalizeCustomerName } from '@/lib/credit';
 import {
   Mic,
   Moon,
@@ -47,6 +48,7 @@ interface Transaction {
   type: 'cash' | 'credit';
   dueDate?: string;
   date: string;
+  timestamp?: string;
   queued?: boolean;
 }
 
@@ -256,6 +258,7 @@ export default function DuukaTalkApp() {
   const [summary, setSummary] = useState<ApiSummary | null>(null);
   const [riskFlags, setRiskFlags] = useState<ApiRiskFlag[]>([]);
   const [hasLiveRisk, setHasLiveRisk] = useState(false);
+  const [vendorAlertSummary, setVendorAlertSummary] = useState<{ vendorAlerts: number; customerAlerts: number; flags: number } | null>(null);
   const [dismissedRiskIds, setDismissedRiskIds] = useState<string[]>([]);
   const [apiError, setApiError] = useState('');
   const [settlingDebtId, setSettlingDebtId] = useState<string | null>(null);
@@ -277,12 +280,25 @@ export default function DuukaTalkApp() {
   const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [searchQuery, setSearchQuery] = useState('');
 
+  type PendingLimitWarning = {
+    customer: string;
+    item: string;
+    amount: number;
+    paymentType: Transaction['type'];
+    outstandingCredit: number;
+    source: 'manual' | 'voice';
+    voiceTx?: VoiceTransaction;
+  };
+
+  const [pendingLimitWarning, setPendingLimitWarning] = useState<PendingLimitWarning | null>(null);
+
   const loadApiData = useCallback(async () => {
     const responses = await Promise.allSettled([
       fetch('/api/ledger'),
       fetch(`/api/summary?language=${language}`),
       fetch('/api/credit'),
       fetch(`/api/risk?language=${language}`),
+      fetch(`/api/sms/alerts?language=${language}`),
     ]);
     let failedRoutes = 0;
 
@@ -294,11 +310,12 @@ export default function DuukaTalkApp() {
       return result.value.json() as Promise<T>;
     };
 
-    const [ledgerData, summaryData, creditData, riskData] = await Promise.all([
+    const [ledgerData, summaryData, creditData, riskData, alertData] = await Promise.all([
       readJson<{ transactions?: ApiTransaction[] }>(responses[0]),
       readJson<ApiSummary>(responses[1]),
       readJson<ApiCreditCustomer[] | { customers?: ApiCreditCustomer[] }>(responses[2]),
       readJson<{ flags?: ApiRiskFlag[] }>(responses[3]),
+      readJson<{ vendorAlerts?: number; customerAlerts?: number; flags?: number }>(responses[4]),
     ]);
 
     const [queued, queuedVoice] = await Promise.all([
@@ -322,6 +339,7 @@ export default function DuukaTalkApp() {
           type: (isCredit ? 'credit' : 'cash') as Transaction['type'],
           dueDate: isCredit && transaction.due_date ? `Due ${new Date(transaction.due_date).toLocaleDateString()}` : undefined,
           date: transaction.timestamp ? new Date(transaction.timestamp).toLocaleString() : 'Recently',
+          timestamp: transaction.timestamp,
         };
       });
       setTransactions([...queuedUi, ...live]);
@@ -356,6 +374,14 @@ export default function DuukaTalkApp() {
         return [...stale, ...incoming];
       });
       setHasLiveRisk(true);
+    }
+
+    if (alertData && typeof alertData.vendorAlerts === 'number' && typeof alertData.customerAlerts === 'number') {
+      setVendorAlertSummary({
+        vendorAlerts: alertData.vendorAlerts,
+        customerAlerts: alertData.customerAlerts,
+        flags: typeof alertData.flags === 'number' ? alertData.flags : 0,
+      });
     }
 
     if (failedRoutes > 0) setApiError('Live data is unavailable for some screens. Showing local data.');
@@ -405,12 +431,66 @@ export default function DuukaTalkApp() {
     return () => { activeStreamRef.current?.getTracks().forEach((track) => track.stop()); };
   }, []);
 
+  const matchesTimeframe = (transaction: Transaction) => {
+    const ts = transaction.timestamp ? new Date(transaction.timestamp).getTime() : NaN;
+    const now = new Date();
+    const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+    if (!Number.isFinite(ts)) {
+      return true;
+    }
+
+    if (timeframe === 'daily') {
+      return sameDay(new Date(ts), now);
+    }
+
+    if (timeframe === 'weekly') {
+      const weekAgo = new Date(now);
+      weekAgo.setDate(now.getDate() - 6);
+      return new Date(ts) >= weekAgo && new Date(ts) <= now;
+    }
+
+    if (timeframe === 'monthly') {
+      const txDate = new Date(ts);
+      return txDate.getMonth() === now.getMonth() && txDate.getFullYear() === now.getFullYear();
+    }
+
+    return true;
+  };
+
   const filteredTransactions = transactions.filter((transaction) => {
     const query = searchQuery.trim().toLowerCase();
-    return !query || [transaction.customer, transaction.item, transaction.type].some((value) => value.toLowerCase().includes(query));
+    const matchesSearch = !query || [transaction.customer, transaction.item, transaction.type].some((value) => value.toLowerCase().includes(query));
+    return matchesSearch && matchesTimeframe(transaction);
   });
 
+  const saveLocalTransaction = (customerName: string, itemText: string, amount: number, type: Transaction['type'], dueDateFromVoice?: string | null) => {
+    const newTransaction: Transaction = {
+      id: crypto.randomUUID(),
+      customer: customerName,
+      initials: deriveInitials(customerName),
+      item: itemText,
+      amount,
+      type,
+      dueDate: type === 'credit' ? (dueDateFromVoice ? `Due ${safeFormatDate(dueDateFromVoice)}` : 'Due soon') : undefined,
+      date: 'Just now',
+    };
+
+    setTransactions((t) => [newTransaction, ...t.filter((x) => x.id !== newTransaction.id)]);
+    if (newTransaction.type === 'credit') {
+      setDebts((d) => [{ id: newTransaction.id, customer: newTransaction.customer, initials: newTransaction.initials, item: newTransaction.item, amount: newTransaction.amount, dueDate: newTransaction.dueDate || 'Due soon' }, ...d]);
+    }
+    setFormData({ customer: '', item: '', amount: '', paymentType: 'cash' });
+    setActiveTab('ledgers');
+  };
+
   const text = (english: string, luganda: string) => language === 'EN' ? english : language === 'LUG' ? luganda : `${english} · ${luganda}`;
+  const getKnownOutstandingCredit = (customerName: string) => {
+    const normalizedName = normalizeCustomerName(customerName);
+    const table = summary?.perCustomerCredit ?? {};
+    const found = Object.entries(table).find(([candidateKey]) => normalizeCustomerName(candidateKey) === normalizedName);
+    return found ? Number(found[1]) || 0 : 0;
+  };
   const riskFlagKey = (flag: ApiRiskFlag, index: number) => flag.id || `${flag.type}-${index}`;
   const displayRiskFlags = hasLiveRisk ? riskFlags : buildRiskFlagsFromTransactions(transactions, language);
   const visibleRiskFlags = displayRiskFlags.map((flag, index) => ({ flag, index })).filter(({ flag, index }) => !dismissedRiskIds.includes(riskFlagKey(flag, index)));
@@ -425,13 +505,23 @@ export default function DuukaTalkApp() {
       return;
     }
     const customerName = formData.customer.trim();
-    if (formData.paymentType === 'credit' && (summary?.perCustomerCredit?.[customerName] ?? 0) >= CREDIT_LIMIT) {
-      const warn = text(
-        `Warning: ${customerName} already has UGX ${(summary?.perCustomerCredit?.[customerName] ?? 0).toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Pause new lending and recover cash first.`,
-        `Okulabula: ${customerName} alina amabanja agasigadde UGX ${(summary?.perCustomerCredit?.[customerName] ?? 0).toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Lekeka okukuza obulava obupya era funya ssente.`,
-      );
-      setFormMessage(warn);
-      return;
+    if (formData.paymentType === 'credit') {
+      const outstandingCredit = getKnownOutstandingCredit(customerName);
+      if (outstandingCredit >= CREDIT_LIMIT) {
+        setPendingLimitWarning({
+          customer: customerName,
+          item: formData.item.trim(),
+          amount,
+          paymentType: formData.paymentType,
+          outstandingCredit,
+          source: 'manual',
+        });
+        setFormMessage(text(
+          `Warning: ${customerName} already has UGX ${outstandingCredit.toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Choose ✓ to record, or × to refuse.`,
+          `Okulabula: ${customerName} alina amabanja agasigadde UGX ${outstandingCredit.toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Londa ✓ okuteeka mu bitabo, oba × okugaana.`,
+        ));
+        return;
+      }
     }
     const newTransaction: Transaction = {
       id: crypto.randomUUID(),
@@ -473,13 +563,33 @@ export default function DuukaTalkApp() {
           amount,
           paymentType: newTransaction.type,
           language,
+          acknowledgedWarning: false,
         }),
       });
       if (!response.ok) {
         const result = await response.json().catch(() => null) as { error?: string } | null;
+        if (response.status === 409 && formData.paymentType === 'credit') {
+          const outstandingCredit = getKnownOutstandingCredit(customerName);
+          setPendingLimitWarning({
+            customer: customerName,
+            item: newTransaction.item,
+            amount,
+            paymentType: formData.paymentType,
+            outstandingCredit,
+            source: 'manual',
+          });
+          setFormMessage(text(
+            `Warning: ${customerName} already has UGX ${outstandingCredit.toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Choose ✓ to record, or × to refuse.`,
+            `Okulabula: ${customerName} alina amabanja agasigadde UGX ${outstandingCredit.toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Londa ✓ okuteeka mu bitabo, oba × okugaana.`,
+          ));
+          return;
+        }
+
         setFormMessage(result?.error || text('Could not save to the live ledger. Check your connection.', 'Ekitabo tekisobodde kuteekebwako. Kebera network yo.'));
         return;
       }
+
+      await loadApiData();
     } catch {
       await enqueueOfflineTransaction({ id: newTransaction.id, customer: customerName, item: newTransaction.item, amount, paymentType: newTransaction.type });
       setQueuedCount((c) => c + 1);
@@ -488,7 +598,8 @@ export default function DuukaTalkApp() {
       return;
     }
 
-    saveLocally(false);
+    setFormData({ customer: '', item: '', amount: '', paymentType: 'cash' });
+    setActiveTab('ledgers');
     setFormMessage(
       newTransaction.type === 'credit'
         ? text("Entry saved. The customer and vendor will get an SMS if Africa's Talking is configured — including credit-limit and other vendor alerts.", "Ekiwandiiko kiteekeddwa. Omuguzi n'akatale bajja kufuna SMS singa Africa's Talking etegekeddwa, nga mwotadde n'ekkomo ly'omubanja n'obulabirizi.")
@@ -514,6 +625,96 @@ export default function DuukaTalkApp() {
       applyLocalDebtPayment(debt);
       setApiError(text('Payment saved on this device only. Live ledger could not be updated.', 'Essente ziteekeddwa ku kyuuma kino kyokka. Ekitabo tekikyusiddwa.'));
     } finally { setSettlingDebtId(null); }
+  };
+
+  const rejectPendingLimitWarning = () => {
+    setPendingLimitWarning(null);
+    setFormMessage(text('Refused. The new credit transaction was not added to the ledger.', 'Kugaanyi. Ekiwandiiko ekipya tekiteekeddwa mu bitabo.'));
+  };
+
+  const acceptPendingLimitWarning = async () => {
+    if (!pendingLimitWarning) return;
+
+    if (pendingLimitWarning.source === 'manual') {
+      try {
+        const response = await fetch('/api/ledger', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer: pendingLimitWarning.customer,
+            item: pendingLimitWarning.item,
+            amount: pendingLimitWarning.amount,
+            paymentType: pendingLimitWarning.paymentType,
+            language,
+            acknowledgedWarning: true,
+          }),
+        });
+
+        if (!response.ok) {
+          const result = await response.json().catch(() => null) as { error?: string } | null;
+          setFormMessage(result?.error || text('Could not record the acknowledged over-limit transaction.', 'Tekisobodde kuteekebwako omubanja ogusukkidde ekkomo lya kkono.'));
+          setPendingLimitWarning(null);
+          return;
+        }
+
+        await loadApiData();
+        setFormData({ customer: '', item: '', amount: '', paymentType: 'cash' });
+        setPendingLimitWarning(null);
+        setActiveTab('ledgers');
+        setFormMessage(text('Entry recorded after the warning was accepted.', 'Ekiwandiiko kiteekeddwa nga okulabula kuteekwa ku bwakiri.'));
+      } catch {
+        setPendingLimitWarning(null);
+        setFormMessage(text('Could not reach the ledger route after the warning was accepted.', 'Tebisobodde kufuna ekitabo nga okulabula kuteekwa ku bwakiri.'));
+      }
+      return;
+    }
+
+    if (pendingLimitWarning.source === 'voice') {
+      const voiceTx = pendingLimitWarning.voiceTx;
+      if (!voiceTx) {
+        setPendingLimitWarning(null);
+        return;
+      }
+
+      const quantity = typeof voiceTx.quantity === 'number' && !Number.isNaN(voiceTx.quantity) ? voiceTx.quantity : null;
+      const unitPrice = typeof voiceTx.unitPrice === 'number' && !Number.isNaN(voiceTx.unitPrice) ? voiceTx.unitPrice : null;
+      const amount = quantity !== null && unitPrice !== null ? quantity * unitPrice : pendingLimitWarning.amount;
+      const itemParts = [quantity, voiceTx.unit, voiceTx.item].filter((p): p is string | number => p !== null && p !== undefined && p !== '');
+      const itemLabel = itemParts.length > 0 ? itemParts.join(' ') : text('Recorded item', 'Ekintu ekiwandiikiddwa');
+      const dueDateLabel = safeFormatDate(voiceTx.dueDate);
+
+      try {
+        const response = await fetch('/api/ledger', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer: pendingLimitWarning.customer,
+            item: itemLabel,
+            amount,
+            paymentType: pendingLimitWarning.paymentType,
+            dueDate: voiceTx.dueDate ?? null,
+            language,
+            acknowledgedWarning: true,
+          }),
+        });
+
+        if (!response.ok) {
+          const result = await response.json().catch(() => null) as { error?: string } | null;
+          setFormMessage(result?.error || text('Could not record the acknowledged over-limit voice transaction.', 'Tekisobodde kuteekebwako omubanja ogusukkidde ekkomo lya kkono okuva mu ddoboozi.'));
+          setPendingLimitWarning(null);
+          return;
+        }
+
+        await loadApiData();
+        setPendingLimitWarning(null);
+        setFormData({ customer: '', item: '', amount: '', paymentType: 'cash' });
+        setActiveTab('ledgers');
+        setFormMessage(text('Entry saved from your voice recording after acknowledging the credit warning.', "Ekiwandiiko kiteekeddwa okuva mu ky'owogedde nga okulabula kuteekwa ku bwakiri."));
+      } catch {
+        setPendingLimitWarning(null);
+        setFormMessage(text('Could not reach the ledger route after the warning was accepted.', 'Tebisobodde kufuna ekitabo nga okulabula kuteekwa ku bwakiri.'));
+      }
+    }
   };
 
   const handleExport = () => {
@@ -554,13 +755,25 @@ export default function DuukaTalkApp() {
       const itemParts = [quantity, voiceTx.unit, voiceTx.item].filter((p): p is string | number => p !== null && p !== undefined && p !== '');
       const itemLabel = itemParts.length > 0 ? itemParts.join(' ') : text('Recorded item', 'Ekintu ekiwandiikiddwa');
       const paymentType: Transaction['type'] = voiceTx.paymentType === 'credit' ? 'credit' : 'cash';
-      if (paymentType === 'credit' && (summary?.perCustomerCredit?.[customerName] ?? 0) >= CREDIT_LIMIT) {
-        setMicError(text(
-          `Warning: ${customerName} already has UGX ${(summary?.perCustomerCredit?.[customerName] ?? 0).toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Pause new lending and recover cash first.`,
-          `Okulabula: ${customerName} alina amabanja agasigadde UGX ${(summary?.perCustomerCredit?.[customerName] ?? 0).toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Lekeka okukuza obulava obupya era funya ssente.`,
-        ));
-        setIsProcessing(false);
-        return;
+      if (paymentType === 'credit') {
+        const outstandingCredit = getKnownOutstandingCredit(customerName);
+        if (outstandingCredit >= CREDIT_LIMIT) {
+          setPendingLimitWarning({
+            customer: customerName,
+            item: itemLabel,
+            amount,
+            paymentType,
+            outstandingCredit,
+            source: 'voice',
+            voiceTx,
+          });
+          setMicError(text(
+            `Warning: ${customerName} already has UGX ${outstandingCredit.toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Choose ✓ to record, or × to refuse.`,
+            `Okulabula: ${customerName} alina amabanja agasigadde UGX ${outstandingCredit.toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Londa ✓ okuteeka mu bitabo, oba × okugaana.`,
+          ));
+          setIsProcessing(false);
+          return;
+        }
       }
       const dueDateLabel = safeFormatDate(voiceTx.dueDate);
       const newTransaction: Transaction = {
@@ -639,6 +852,42 @@ export default function DuukaTalkApp() {
       </div>
 
       {apiError && <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-800" role="status">{text('Live data is unavailable for some screens. Showing local data.', "Data y'okukola tebiriwo ku screen ezimu. Tulaga data ey'omu kitundu.")}</p>}
+
+      {vendorAlertSummary && (vendorAlertSummary.vendorAlerts > 0 || vendorAlertSummary.customerAlerts > 0) && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-blue-700">
+              <Phone size={18} />
+              <span className="text-[11px] font-black uppercase tracking-wide">{text('Vendor alerts', 'Vendor alerts')}</span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] font-bold">
+              <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-700">{vendorAlertSummary.vendorAlerts}</span>
+              <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">{vendorAlertSummary.customerAlerts}</span>
+            </div>
+          </div>
+          <div className="mt-2 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+            {text(`Vendor ${vendorAlertSummary.vendorAlerts} · Customer ${vendorAlertSummary.customerAlerts}`, `Katale ${vendorAlertSummary.vendorAlerts} · Omuguzi ${vendorAlertSummary.customerAlerts}`)}
+          </div>
+        </div>
+      )}
+
+      {pendingLimitWarning && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-amber-700">
+              <AlertCircle size={18} />
+              <span className="text-xs font-black uppercase tracking-wide">{text('Over-limit', 'Kusukkidde')}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={rejectPendingLimitWarning} className="flex items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-red-700 hover:bg-red-50" aria-label="Refuse"><X size={18} /></button>
+              <button type="button" onClick={acceptPendingLimitWarning} className="flex items-center justify-center rounded-lg border border-emerald-200 px-3 py-2 text-emerald-700 hover:bg-emerald-50" aria-label="Record"><CheckCircle size={18} /></button>
+            </div>
+          </div>
+          <div className="mt-2 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+            {text(`Balance: UGX ${pendingLimitWarning.outstandingCredit.toLocaleString()}`, `Omubanja: UGX ${pendingLimitWarning.outstandingCredit.toLocaleString()}`)}
+          </div>
+        </div>
+      )}
 
       <div className="relative flex items-center justify-center py-1">
         <div className="border-t border-slate-200 dark:border-slate-800 w-full"></div>
@@ -803,7 +1052,7 @@ export default function DuukaTalkApp() {
         </div>
         <p className="text-[11px] text-slate-500 dark:text-slate-400">{text('Recommended savings target:', 'Ekigendererwa eky\'okuterekera:')}</p>
         <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300 mt-1">UGX {(summary?.recommendedSavings || Math.round(((summary?.totalSales || 0) * (summary?.savingsPercent || 10)) / 100)).toLocaleString()}</p>
-        <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-2 leading-snug">{summary?.loanAdvice || text('Save 10% of sales to improve your ability to qualify for a bank loan.', 'Tereka 10% ku magoba okuzimba omutindo gw\'okuyamba okufuna olwanji lwa bank.')}</p>
+        <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-2 leading-snug">{summary?.loanAdvice || text("Save 10% of sales and keep saving every week. This helps banks like ABSA trust your record for a loan.", "Tereka 10% ku magoba era terekeranga buli wiiki. Kino kiyamba banki nga ABSA okukulaba ng'olina ekitabo ekirungi ku olwanji.")}</p>
       </div>
 
       <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>

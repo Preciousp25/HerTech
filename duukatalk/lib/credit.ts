@@ -8,6 +8,13 @@ export const MAX_CREDIT_TO_SALES_RATIO = 0.5;
 
 export type GuidanceLanguage = "EN" | "LUG" | "MIX";
 
+export function normalizeCustomerName(name: string | null | undefined): string {
+  return (name ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
 export function parseGuidanceLanguage(value: string | null | undefined): GuidanceLanguage {
   if (value === "EN" || value === "LUG" || value === "MIX") return value;
   return "EN";
@@ -93,22 +100,22 @@ export function buildLoanGuidance(
 
   const recommendedSavings = Math.round(totalSales * (savingsPercent / 100));
   const savingsTarget = Math.round(totalSales * (savingsPercent / 100));
-  const savingsTargetMessageEn = `Save ${savingsPercent}% of sales, about UGX ${savingsTarget.toLocaleString()}, to build a bank-ready savings record and strengthen your loan eligibility.`;
-  const savingsTargetMessageLug = `Tereka ${savingsPercent}% ku bigobawo, nga buli ${savingsTarget.toLocaleString()} UGX, okuzimba ebiwandiiko by'okusasaza ebisale n'okuwaanyi awamu obuyinza bw'okukola esawo.`;
+  const savingsTargetMessageEn = `Save ${savingsPercent}% of sales, about UGX ${savingsTarget.toLocaleString()}. Keep saving every week. This helps your money record look strong and makes it easier for banks like ABSA to trust you for a loan.`;
+  const savingsTargetMessageLug = `Tereka ${savingsPercent}% ku bigobawo, nga buli ${savingsTarget.toLocaleString()} UGX. Terekeranga buli wiiki. Kino kiyamba ebiwandiiko byo okusobola okuba ebirungi era banki nga ABSA bayinza okukukkiriza olwanji.`;
   const savingsTargetMessage = localizeGuidance(language, savingsTargetMessageEn, savingsTargetMessageLug);
 
   let advice = savingsTargetMessage;
   if (shouldStopLending) {
-    const english = `Pause new lending because outstanding credit is ${creditSharePercent}% of sales, above the safe cash-to-credit cap of ${Math.round(MAX_CREDIT_TO_SALES_RATIO * 100)}%. Recover cash from customers, keep lending below the sale value, and aim to keep sales cash stronger than credit.`;
-    const luganda = `Lekeka okukuza obulava obupya kubanga amabanja agasigalidde galinga ${creditSharePercent}% ku bigobawo, okusukka ku kkomo lya ssente eziriwo ne z'emubanja e ${Math.round(MAX_CREDIT_TO_SALES_RATIO * 100)}%. Funya ssente eri abaguzi, wewale okukuza obulava obupya obusaale ebigobawo, era gezaako okukuuma ssente ku bigobawo okusinga amabanja.`;
+    const english = `Stop giving new credit now. Credit is ${creditSharePercent}% of sales, which is too high. First collect debts and save ${savingsPercent}% of sales, about UGX ${savingsTarget.toLocaleString()}. A clear savings record can help banks like ABSA trust you.`;
+    const luganda = `Lekeka okukuza obulava obupya kati. Amabanja gali ${creditSharePercent}% ku bigobawo, go maanyi. Funya amabanja era teeka ${savingsPercent}% ku bigobawo, nga buli UGX ${savingsTarget.toLocaleString()}. Ebiwandiiko by'okutereka ebirungi biyinza okukuza obwesigibwa bwa banki nga ABSA.`;
     advice = localizeGuidance(language, english, luganda);
   } else if (creditToSalesRatio >= 0.3) {
-    const english = `Cash is still healthy, but outstanding credit is ${creditSharePercent}% of sales. Keep lending careful, collect repayments, and save ${savingsPercent}% of sales, about UGX ${savingsTarget.toLocaleString()}, before adding more credit.`;
-    const luganda = `Ssente ziri mu bulamu, naye amabanja agasigalidde gali ${creditSharePercent}% ku bigobawo. Kukuza obulava obupya okuteekateeka, funya ebigoberera by'abaguzi, era teeka ku side ${savingsPercent}% ku bigobawo, nga buli UGX ${savingsTarget.toLocaleString()}, nga tonaddako omubanja.`;
+    const english = `Cash is okay, but credit is ${creditSharePercent}% of sales. Be careful with new loans. Collect repayments, save ${savingsPercent}% of sales, about UGX ${savingsTarget.toLocaleString()}, and keep a simple savings record. This helps banks like ABSA see you as ready for a loan.`;
+    const luganda = `Ssente ziri bulungi, naye amabanja gali ${creditSharePercent}% ku bigobawo. Kukuza obulava obupya okuteekateeka. Funya ebigoberera, teeka ${savingsPercent}% ku bigobawo, nga buli UGX ${savingsTarget.toLocaleString()}, era otereke ebiwandiiko ebirungi. Kino kiyamba banki nga ABSA okukulaba ng'oyagala olwanji.`;
     advice = localizeGuidance(language, english, luganda);
   } else {
-    const english = `Sales are stronger than credit exposure. Keep adding only a careful amount of credit, save ${savingsPercent}% of sales, about UGX ${savingsTarget.toLocaleString()}, and grow the cash position before expanding loans.`;
-    const luganda = `Ebigobawo byazaala nnyo okusinga amabanja. Genda mu kukuluza obulava obupya obutono, teeka ${savingsPercent}% ku bigobawo, nga buli UGX ${savingsTarget.toLocaleString()}, era gaziya ssente eziriwo nga tonazikozesa mu kukuliza obulava.`;
+    const english = `Sales are stronger than credit. Keep adding small credit carefully, save ${savingsPercent}% of sales, about UGX ${savingsTarget.toLocaleString()}, and keep saving every week. This helps banks like ABSA trust your sales record and may help you get a loan.`;
+    const luganda = `Ebigobawo byazaala nnyo okusinga amabanja. Kukuza obulava obupya obutono, teeka ${savingsPercent}% ku bigobawo, nga buli UGX ${savingsTarget.toLocaleString()}, era terekeranga buli wiiki. Kino kiyamba banki nga ABSA okukulaba ng'olina ekitabo ekirungi era kiyinza okukuyamba okufuna olwanji.`;
     advice = localizeGuidance(language, english, luganda);
   }
 

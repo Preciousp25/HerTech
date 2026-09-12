@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { dispatchVendorAlertSms } from "@/lib/dispatch-vendor-alerts";
+import { dispatchVendorAlertSms, getAlertSummary } from "@/lib/dispatch-vendor-alerts";
 import { isSmsConfigured } from "@/lib/sms";
 import { parseLanguage } from "@/lib/risk-flags";
 
@@ -19,12 +19,13 @@ async function dispatchAlertSms(request: NextRequest, bodyOverride?: { language?
   return NextResponse.json({ ok: true, ...sms });
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    return await dispatchAlertSms(request);
+    const summary = await getAlertSummary();
+    return NextResponse.json(summary);
   } catch (error) {
-    console.error("Vendor alert SMS sweep failed:", error);
-    return NextResponse.json({ error: "Failed to send vendor alert SMS" }, { status: 500 });
+    console.error("Vendor alert summary lookup failed:", error);
+    return NextResponse.json({ error: "Failed to read vendor alert summary" }, { status: 500 });
   }
 }
 
