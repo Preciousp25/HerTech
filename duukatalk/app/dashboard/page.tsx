@@ -90,6 +90,14 @@ interface ApiTransaction {
 interface ApiSummary {
   totalSales?: number;
   totalCreditOutstanding?: number;
+  perCustomerCredit?: Record<string, number>;
+  recommendedSavings?: number;
+  savingsPercent?: number;
+  loanReadinessScore?: number;
+  loanAdvice?: string;
+  creditToSalesRatio?: number;
+  creditSharePercent?: number;
+  shouldStopLending?: boolean;
 }
 
 interface StoredUser {
@@ -2775,6 +2783,65 @@ export default function DuukaTalkApp() {
             <span className="text-[10px] text-blue-600 font-semibold">
               {text('From your database', 'Okuva mu database yo')}
             </span>
+          </div>
+        </div>
+
+        {/* Savings & Loan Readiness Coach */}
+        <div
+          className={`p-4 rounded-xl border ${
+            isDarkMode
+              ? 'bg-slate-800/60 border-slate-700'
+              : 'bg-white border-slate-200'
+          }`}
+        >
+          <h4 className="mb-3 text-xs font-bold">
+            {text(
+              'Savings & Loan Readiness Coach',
+              'Omuwandiisi w’ensawo n’ensimbi'
+            )}
+          </h4>
+
+          <div className="space-y-3">
+            <div className="rounded-xl bg-emerald-50 p-3 dark:bg-emerald-950/30">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                  {text(
+                    'Loan readiness score',
+                    'Omuwendo gw’okukola olwanji'
+                  )}
+                </span>
+                <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-[10px] font-bold text-white">
+                  {summary?.loanReadinessScore ?? 0}
+                </span>
+              </div>
+              <div className="mt-2 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                {text(
+                  'Recommended savings target',
+                  'Ekiri mu kuteeka ssente'
+                )}
+                : UGX {summary?.recommendedSavings?.toLocaleString() ?? '0'}
+              </div>
+              <div className="mt-2 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                {text(
+                  'Cash vs credit in shop',
+                  'Ssente eziriwo vs amabanja'
+                )}
+                : {summary?.creditSharePercent ?? 0}%
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-blue-50 p-3 dark:bg-blue-950/30">
+              <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                {text('Coach advice', 'Okulabula kwa coach')}
+              </div>
+              <p className="mt-2 text-[11px] leading-5 text-slate-600 dark:text-slate-300">
+                {summary?.loanAdvice ||
+                  text(
+                    'Keep cash at hand above credit and save a percentage of sales each week. If your shop accounts are operating well, banks can give you a loan.',
+                    'Teeka ssente eziriwo okusukka amabanja era teeka ku bigobawo buli wiiki. Oba bizinensi yo ekola bulungi, banki ziyinza okukukkiriza olwanji.'
+                  )}
+              </p>
+            </div>
           </div>
         </div>
 
