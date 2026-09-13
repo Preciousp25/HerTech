@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signupVendor } from "@/lib/auth";
+import { isCountryCode } from "@/lib/currency";
 
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { pin, businessName, ownerName, phone } = body ?? {};
+    const { pin, businessName, ownerName, phone, country } = body ?? {};
 
-    if (typeof pin !== "string" || typeof businessName !== "string") {
+    if (
+      typeof pin !== "string" ||
+      typeof businessName !== "string" ||
+      !isCountryCode(country)
+    ) {
       return NextResponse.json(
-        { success: false, error: "pin and businessName are required" },
+        { success: false, error: "pin, businessName, and country are required" },
         { status: 400 }
       );
     }
@@ -31,7 +36,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await signupVendor({ pin, businessName, ownerName, phone });
+    await signupVendor({ pin, businessName, ownerName, phone, country });
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (err) {

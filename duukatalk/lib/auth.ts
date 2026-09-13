@@ -9,6 +9,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { CountryCode, currencyForCountry } from "./currency";
 
 const VENDORS_COLLECTION = "vendors";
 const COUNTERS_COLLECTION = "counters";
@@ -24,6 +25,8 @@ export interface VendorRecord {
   businessNameLower: string;
   ownerName: string;
   phone: string;
+  country?: CountryCode;
+  currency?: string;
   failedAttempts: number;
   lockedUntil: string | null;
   createdAt: string;
@@ -41,6 +44,8 @@ export interface LoginResult {
   businessName?: string;
   ownerName?: string;
   phone?: string;
+  country?: CountryCode;
+  currency?: string;
 }
 
 export interface SignupResult {
@@ -123,12 +128,14 @@ export async function signupVendor(params: {
   businessName: string;
   ownerName?: string;
   phone?: string;
+  country?: CountryCode;
 }): Promise<SignupResult> {
   const {
     pin,
     businessName,
     ownerName,
     phone,
+    country,
   } = params;
 
   if (!isValidPinFormat(pin)) {
@@ -160,6 +167,8 @@ export async function signupVendor(params: {
       .toLowerCase(),
     ownerName: ownerName?.trim() || "",
     phone: phone?.trim() || "",
+    country,
+    currency: currencyForCountry(country || "UG"),
     failedAttempts: 0,
     lockedUntil: null,
     createdAt: now,
@@ -300,6 +309,8 @@ export async function loginVendor(
     businessName: record.businessName,
     ownerName: record.ownerName,
     phone: record.phone,
+    country: record.country || "UG",
+    currency: record.currency || currencyForCountry(record.country || "UG"),
   };
 }
 

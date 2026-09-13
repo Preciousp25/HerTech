@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
   BarChart3,
+  Bell,
   BookOpen,
   CheckCircle,
   ChevronLeft,
@@ -35,8 +36,10 @@ import {
 import {
   LANGUAGE_OPTIONS,
   Language,
+  localeForLanguage,
   translate,
 } from '@/lib/i18n';
+import { currencyForCountry } from '@/lib/currency';
 
 type TabType = 'record' | 'ledgers' | 'debts' | 'reports';
 
@@ -96,6 +99,8 @@ interface StoredUser {
   businessName?: string;
   ownerName?: string;
   phone?: string;
+  country?: string;
+  currency?: string;
 }
 
 interface ApiDebt {
@@ -161,15 +166,26 @@ function safeFormatDateTime(value?: string | null): string {
   return parsed.toLocaleString();
 }
 
+function formatMoney(amount: number, currency: string): string {
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+    currencyDisplay: 'code',
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
 export default function DuukaTalkApp() {
   const router = useRouter();
 
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [language, setLanguage] = useState<Language>('EN');
-  const [activeTab, setActiveTab] = useState<TabType>('reports');
+  const [activeTab, setActiveTab] = useState<TabType>('record');
   const [user, setUser] = useState<StoredUser>({});
+  const currency = user.currency || currencyForCountry(user.country || 'UG');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [newPin, setNewPin] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [settingsMessage, setSettingsMessage] = useState('');
@@ -302,6 +318,11 @@ const [questionError, setQuestionError] =
 
     setIsDarkMode(savedTheme === 'dark');
   }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = localeForLanguage(language);
+    document.documentElement.dir = language === 'AR' ? 'rtl' : 'ltr';
+  }, [language]);
 
   // =========================================================
   // LOAD DEBTS
@@ -1071,7 +1092,7 @@ const [questionError, setQuestionError] =
       [
         'Customer',
         'Item',
-        'Amount (UGX)',
+        `Amount (${currency})`,
         'Type',
         'Date',
       ],
@@ -1899,7 +1920,7 @@ console.log('Question audio:', {
           <div>
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-sm">
-                Your Business
+                {text('Your Business')}
               </span>
 
               <span className="text-sm">
@@ -1908,13 +1929,13 @@ console.log('Question audio:', {
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              DuukaTalk Vendor
+              {text('DuukaTalk Vendor')}
             </p>
           </div>
         </div>
 
         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
-          Connected
+          {text('Connected')}
         </span>
       </div>
 
@@ -2026,7 +2047,7 @@ console.log('Question audio:', {
 
             <input
               type="text"
-              placeholder="e.g. Nakato Grace or 0772…"
+              placeholder={text('e.g. Nakato Grace or 0772…')}
               value={formData.customer}
               onChange={(e) =>
                 setFormData({
@@ -2060,7 +2081,7 @@ console.log('Question audio:', {
 
             <input
               type="text"
-              placeholder="e.g. Kasooli 2kg, Amafuta 1L"
+              placeholder={text('e.g. Kasooli 2kg, Amafuta 1L')}
               value={formData.item}
               onChange={(e) =>
                 setFormData({
@@ -2080,14 +2101,14 @@ console.log('Question audio:', {
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
             {text(
-              'Total Amount (UGX)',
-              'Omuwendo (UGX)'
+              `Total Amount (${currency})`,
+              `Omuwendo (${currency})`
             )}
           </label>
 
           <div className="relative">
             <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">
-              UGX
+              {currency}
             </span>
 
             <input
@@ -2226,14 +2247,52 @@ console.log('Question audio:', {
             />
           </div>
 
-          <button
-            onClick={handleExport}
-            type="button"
-            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800"
-          >
-            <Download size={14} />
-            CSV
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsNotificationsOpen((open) => !open)}
+              className={`relative flex h-10 w-10 items-center justify-center rounded-lg border transition ${
+                isDarkMode
+                  ? 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+              aria-label={text('Open debt notifications')}
+              aria-expanded={isNotificationsOpen}
+            >
+              <Bell size={18} />
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-slate-950">
+                0
+              </span>
+            </button>
+
+            {isNotificationsOpen && (
+              <div
+                className={`absolute right-0 top-12 z-30 w-72 rounded-xl border p-4 shadow-xl ${
+                  isDarkMode
+                    ? 'border-slate-700 bg-slate-900 text-white'
+                    : 'border-slate-200 bg-white text-slate-800'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold">
+                      {text('Debt notifications')}
+                    </h4>
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      {text('People who have outstanding debt will appear here.')}
+                    </p>
+                  </div>
+                  <Bell size={16} className="shrink-0 text-amber-500" />
+                </div>
+
+                <div className="mt-4 rounded-lg border border-dashed border-slate-200 px-3 py-4 text-center dark:border-slate-700">
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {text('No debt notifications yet.')}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Time Filter */}
@@ -2304,7 +2363,7 @@ console.log('Question audio:', {
               <div className="text-2xl font-extrabold mt-0.5">
                 {isLoadingData
                   ? 'Loading...'
-                  : `UGX ${totalSales.toLocaleString()}`}
+                  : formatMoney(totalSales, currency)}
               </div>
             </div>
 
@@ -2330,7 +2389,7 @@ console.log('Question audio:', {
               <p className="font-bold text-sm">
                 {isLoadingData
                   ? 'Loading...'
-                  : `UGX ${totalSales.toLocaleString()}`}
+                  : formatMoney(totalSales, currency)}
               </p>
             </div>
 
@@ -2345,7 +2404,7 @@ console.log('Question audio:', {
               <p className="font-bold text-sm text-amber-300">
                 {isLoadingData
                   ? 'Loading...'
-                  : `UGX ${totalCreditOutstanding.toLocaleString()}`}
+                  : formatMoney(totalCreditOutstanding, currency)}
               </p>
             </div>
           </div>
@@ -2531,8 +2590,7 @@ console.log('Question audio:', {
 
                       <div className="text-right shrink-0">
                         <div className="text-xs font-bold">
-                          UGX{' '}
-                          {tx.amount.toLocaleString()}
+                          {formatMoney(tx.amount, currency)}
                         </div>
 
                         <div className="flex items-center justify-end gap-1.5 mt-1">
@@ -2544,9 +2602,9 @@ console.log('Question audio:', {
                             }`}
                           >
                             {tx.type === 'cash'
-                              ? 'Cash'
+                              ? text('Cash')
                               : tx.dueDate ||
-                                'Credit'}
+                                text('Credit')}
                           </span>
 
                           <button
@@ -2688,7 +2746,7 @@ console.log('Question audio:', {
               onClick={handleCancelEdit}
               disabled={isSavingEdit}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-50"
-              aria-label="Close edit form"
+              aria-label={text('Close edit form')}
             >
               <X size={18} />
             </button>
@@ -2771,14 +2829,14 @@ console.log('Question audio:', {
             <div>
               <label className="block text-xs font-semibold mb-1.5 text-slate-600 dark:text-slate-300">
                 {text(
-                  'Total Amount (UGX)',
-                  'Omuwendo (UGX)'
+                  `Total Amount (${currency})`,
+                  `Omuwendo (${currency})`
                 )}
               </label>
 
               <div className="relative">
                 <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">
-                  UGX
+                  {currency}
                 </span>
 
                 <input
@@ -2999,7 +3057,7 @@ console.log('Question audio:', {
                 isDeletingTransaction
               }
               className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-50"
-              aria-label="Close delete confirmation"
+              aria-label={text('Close delete confirmation')}
             >
               <X size={18} />
             </button>
@@ -3031,8 +3089,7 @@ console.log('Question audio:', {
 
                 <div className="text-right shrink-0">
                   <p className="text-xs font-bold">
-                    UGX{' '}
-                    {deletingTransaction.amount.toLocaleString()}
+                    {formatMoney(deletingTransaction.amount, currency)}
                   </p>
 
                   <span
@@ -3045,8 +3102,8 @@ console.log('Question audio:', {
                   >
                     {deletingTransaction.type ===
                     'cash'
-                      ? 'Cash'
-                      : 'Credit'}
+                      ? text('Cash')
+                      : text('Credit')}
                   </span>
                 </div>
               </div>
@@ -3141,7 +3198,7 @@ console.log('Question audio:', {
             <div className="text-2xl font-extrabold mt-0.5">
               {isLoadingDebts
                 ? 'Loading...'
-                : `UGX ${totalDebts.toLocaleString()}`}
+                : formatMoney(totalDebts, currency)}
             </div>
           </div>
 
@@ -3216,7 +3273,7 @@ console.log('Question audio:', {
               )}
             </strong>
 
-            {`: ${debt.customer} has exceeded UGX 200,000 by UGX ${(debt.amount - 200000).toLocaleString()}.`}
+            {`: ${debt.customer} has exceeded ${formatMoney(200000, currency)} by ${formatMoney(debt.amount - 200000, currency)}.`}
           </div>
         ))}
 
@@ -3269,8 +3326,7 @@ console.log('Question audio:', {
 
                 <div className="text-right shrink-0">
                   <div className="text-xs font-extrabold text-amber-600 dark:text-amber-400">
-                    UGX{' '}
-                    {debt.amount.toLocaleString()}
+                    {formatMoney(debt.amount, currency)}
                   </div>
 
                   <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-[10px] font-semibold">
@@ -3429,8 +3485,7 @@ console.log('Question audio:', {
             </span>
 
             <div className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">
-              UGX{' '}
-              {cashSales.toLocaleString()}
+              {formatMoney(cashSales, currency)}
             </div>
 
             <span className="text-[10px] text-emerald-600 font-semibold">
@@ -3456,8 +3511,7 @@ console.log('Question audio:', {
             </span>
 
             <div className="text-base font-extrabold text-blue-600 dark:text-blue-400 mt-1">
-              UGX{' '}
-              {debtSales.toLocaleString()}
+              {formatMoney(debtSales, currency)}
             </div>
 
             <span className="text-[10px] text-blue-600 font-semibold">
@@ -3537,6 +3591,15 @@ console.log('Question audio:', {
             </div>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={handleExport}
+          className="flex w-full items-center justify-center gap-3 rounded-xl bg-blue-900 px-5 py-4 text-sm font-bold text-white shadow-md transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-900/20"
+        >
+          <Download size={20} />
+          {text('Download ledger report')}
+        </button>
       </div>
     );
   };
@@ -3578,7 +3641,7 @@ console.log('Question audio:', {
               className="sr-only"
               htmlFor="language-mode"
             >
-              Language
+              {text('Language')}
             </label>
 
             <select
@@ -3636,7 +3699,7 @@ console.log('Question audio:', {
               <button
                 type="button"
                 onClick={toggleTheme}
-                aria-label="Toggle theme"
+                aria-label={text('Toggle theme')}
                 className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 {isDarkMode ? (

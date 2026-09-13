@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowRight, Mic, BookOpen, BarChart3 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
   LANGUAGE_OPTIONS,
   Language,
+  localeForLanguage,
   translate,
 } from '@/lib/i18n';
 
@@ -14,6 +15,20 @@ export default function GetStartedPage() {
 
   // Keep the initial render deterministic for SSR/hydration.
   const [language, setLanguage] = useState<Language>('EN');
+
+  useEffect(() => {
+    const savedLanguage = window.localStorage.getItem('duukatalk-language');
+
+    if (LANGUAGE_OPTIONS.some((option) => option.value === savedLanguage)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLanguage(savedLanguage as Language);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = localeForLanguage(language);
+    document.documentElement.dir = language === 'AR' ? 'rtl' : 'ltr';
+  }, [language]);
 
   const text = (value: string) =>
     translate(language, value);
@@ -66,7 +81,7 @@ export default function GetStartedPage() {
 
           {/* Footer */}
           <p className="relative z-10 text-xs text-blue-300">
-            © 2025 DuukaTalk · Made for local businesses
+            {text('© 2025 DuukaTalk · Made for local businesses')}
           </p>
         </section>
 
@@ -79,7 +94,7 @@ export default function GetStartedPage() {
                 className="sr-only"
                 htmlFor="landing-language"
               >
-                Language
+                {text('Language')}
               </label>
 
               <select
@@ -120,8 +135,8 @@ export default function GetStartedPage() {
                   DuukaTalk
                 </p>
 
-                <p className="text-xs text-slate-500">
-                  Your shop, your story.
+                  <p className="text-xs text-slate-500">
+                  {text('Your shop, your story.')}
                 </p>
               </div>
             </div>
@@ -157,8 +172,7 @@ export default function GetStartedPage() {
                   </h3>
 
                   <p className="mt-1 text-sm leading-5 text-slate-500">
-                    Speak naturally and let DuukaTalk help
-                    record your transactions.
+                    {text('Speak naturally and let DuukaTalk help record your transactions.')}
                   </p>
                 </div>
               </div>
@@ -175,8 +189,7 @@ export default function GetStartedPage() {
                   </h3>
 
                   <p className="mt-1 text-sm leading-5 text-slate-500">
-                    See your sales and customer debts in one
-                    simple ledger.
+                    {text('See your sales and customer debts in one simple ledger.')}
                   </p>
                 </div>
               </div>
@@ -193,8 +206,7 @@ export default function GetStartedPage() {
                   </h3>
 
                   <p className="mt-1 text-sm leading-5 text-slate-500">
-                    Get a clear view of sales and outstanding
-                    credit.
+                    {text('Get a clear view of sales and outstanding credit.')}
                   </p>
                 </div>
               </div>

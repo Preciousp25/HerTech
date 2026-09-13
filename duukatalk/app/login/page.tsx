@@ -19,8 +19,10 @@ import {
 import {
   LANGUAGE_OPTIONS,
   Language,
+  localeForLanguage,
   translate,
 } from '@/lib/i18n';
+import { COUNTRY_OPTIONS, CountryCode } from '@/lib/currency';
 
 type AuthMode = 'signup' | 'login';
 
@@ -33,6 +35,8 @@ interface AuthApiResponse {
   businessName?: string;
   ownerName?: string;
   phone?: string;
+  country?: CountryCode;
+  currency?: string;
 }
 
 function LoginContent() {
@@ -47,13 +51,34 @@ function LoginContent() {
 
   const [language, setLanguage] = useState<Language>('EN');
   const [businessName, setBusinessName] = useState('');
+  const [country, setCountry] = useState<CountryCode>('UG');
+  const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
+  const [otp, setOtp] = useState('');
+  const [temporaryOtp, setTemporaryOtp] = useState('');
+  const [isOtpStep, setIsOtpStep] = useState(false);
   const [showPin, setShowPin] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isSignup = mode === 'signup';
+
+  const storeLoggedInUser = (data: AuthApiResponse) => {
+    window.localStorage.setItem(
+      'duukatalk-user',
+      JSON.stringify({
+        vendorId: data.vendorId,
+        businessName: data.businessName || businessName.trim(),
+        ownerName: data.ownerName || '',
+        phone: data.phone || phone.trim(),
+        country: data.country || country,
+        currency: data.currency || 'UGX',
+      }),
+    );
+
+    window.localStorage.setItem('duukatalk-language', language);
+  };
 
   /*
    * Keep the local mode in sync with the URL.
@@ -85,6 +110,11 @@ function LoginContent() {
     }
   }, []);
 
+  useEffect(() => {
+    document.documentElement.lang = localeForLanguage(language);
+    document.documentElement.dir = language === 'AR' ? 'rtl' : 'ltr';
+  }, [language]);
+
   const text = (english: string, legacyLuganda?: string) => {
     void legacyLuganda;
     return translate(language, english);
@@ -112,6 +142,46 @@ function LoginContent() {
     setError('');
     setMessage('');
 
+    if (isOtpStep) {
+      if (!/^\d{6}$/.test(otp)) {
+        setError(text('Enter the 6-digit OTP.', 'Yingiza OTP ya nnamba 6.'));
+        return;
+      }
+
+      if (otp !== temporaryOtp) {
+        setError(text('That OTP is not correct. Try again.', 'OTP eyo si ntuufu. Ddamu ogezeeko.'));
+        return;
+      }
+
+      setIsSubmitting(true);
+
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            businessName: businessName.trim(),
+            pin,
+          }),
+        });
+        const data = (await response.json().catch(() => null)) as AuthApiResponse | null;
+
+        if (!response.ok || !data?.success) {
+          setError(data?.error || text('Could not log you in. Please try again.', 'Tetusobodde kukuyingiza. Ddamu ogezeeko.'));
+          return;
+        }
+
+        storeLoggedInUser(data);
+        router.push('/dashboard');
+      } catch {
+        setError(text('Something went wrong. Please try again.', 'Wabaddewo ekizibu. Ddamu ogezeeko.'));
+      } finally {
+        setIsSubmitting(false);
+      }
+
+      return;
+    }
+
     if (!businessName.trim()) {
       setError(
         text(
@@ -119,6 +189,21 @@ function LoginContent() {
           'Yingiza erinnya ly’ekibiina okweyongerayo.',
         ),
       );
+      return;
+    }
+
+    if (isSignup && !country) {
+      setError(
+        text(
+          'Select your country to set your account currency.',
+          'Londa eggwanga lyo okuteekawo ssente za akaawunti yo.',
+        ),
+      );
+      return;
+    }
+
+    if (isSignup && !/^\+?[\d\s()-]{7,20}$/.test(phone.trim())) {
+      setError(text('Enter a valid phone number for your OTP.', 'Yingiza ennamba ya ssimu entuufu ku OTP yo.'));
       return;
     }
 
@@ -144,6 +229,8 @@ function LoginContent() {
           body: JSON.stringify({
             businessName: businessName.trim(),
             pin,
+            country,
+            phone: phone.trim(),
           }),
         });
 
@@ -162,14 +249,16 @@ function LoginContent() {
           return;
         }
 
+        const nextOtp = String(Math.floor(100000 + Math.random() * 900000));
+        setTemporaryOtp(nextOtp);
+        setOtp('');
+        setIsOtpStep(true);
         setMessage(
           text(
-            `Your ${businessName.trim()} account is ready to go. You can now log in.`,
-            `Akaawunti ya ${businessName.trim()} eteekeddwa okukola. Kati osobola okuyingira.`,
+            `We sent a temporary OTP to ${phone.trim()}.`,
+            `Tutumye OTP ey’akaseera ku ${phone.trim()}.`,
           ),
         );
-
-        router.replace('/login?mode=login');
         return;
       }
 
@@ -216,21 +305,7 @@ function LoginContent() {
       }
 
       // Login was successful.
-      window.localStorage.setItem(
-        'duukatalk-user',
-        JSON.stringify({
-          vendorId: data.vendorId,
-          businessName:
-            data.businessName || businessName.trim(),
-          ownerName: data.ownerName || '',
-          phone: data.phone || '',
-        }),
-      );
-
-      window.localStorage.setItem(
-        'duukatalk-language',
-        language,
-      );
+      storeLoggedInUser(data);
 
       console.log('Vendor logged in:', {
         vendorId: data.vendorId,
@@ -253,6 +328,9 @@ function LoginContent() {
 
   const switchMode = (nextMode: AuthMode) => {
     setMode(nextMode);
+    setIsOtpStep(false);
+    setOtp('');
+    setTemporaryOtp('');
     setError('');
     setMessage('');
 
@@ -338,7 +416,7 @@ function LoginContent() {
               className="sr-only"
               htmlFor="login-language-mode"
             >
-              Language
+              {text('Language')}
             </label>
 
             <select
@@ -397,7 +475,9 @@ function LoginContent() {
             </p>
 
             <h2 className="text-3xl font-bold tracking-tight text-blue-950 sm:text-4xl">
-              {isSignup
+              {isOtpStep
+                ? text('Verify your phone.', 'Kakasa essimu yo.')
+                : isSignup
                 ? text(
                     'Set up your shop.',
                     'Tegeka akatale ko.',
@@ -409,7 +489,9 @@ function LoginContent() {
             </h2>
 
             <p className="mt-3 text-sm leading-6 text-slate-500">
-              {isSignup
+              {isOtpStep
+                ? text('Enter the temporary code sent to your phone to finish signing up.', 'Yingiza ennamba eyakasera etumiddwa ku ssimu yo okumaliriza okuwandiisa.')
+                : isSignup
                 ? text(
                     'Create a quick, secure account for your business.',
                     'Tondawo akaawunti eyanguyiriza n’eyokwerinda.',
@@ -421,7 +503,7 @@ function LoginContent() {
             </p>
           </div>
 
-          <div className="mb-8 grid grid-cols-2 rounded-xl bg-slate-200/80 p-1">
+          {!isOtpStep && <div className="mb-8 grid grid-cols-2 rounded-xl bg-slate-200/80 p-1">
             <button
               type="button"
               onClick={() => switchMode('signup')}
@@ -445,13 +527,34 @@ function LoginContent() {
             >
               {text('Log in', 'Yingira')}
             </button>
-          </div>
+          </div>}
 
           <form
             onSubmit={handleSubmit}
             className="space-y-5"
             noValidate
           >
+            {isOtpStep ? (
+              <div>
+                <label htmlFor="signup-otp" className="mb-2 block text-sm font-semibold text-slate-700">
+                  {text('Temporary OTP', 'OTP ey’akaseera')}
+                </label>
+                <input
+                  id="signup-otp"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="000000"
+                  className="h-13 w-full rounded-xl border border-slate-200 bg-white px-4 text-center text-xl tracking-[0.45em] text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10"
+                />
+                <p className="mt-2 text-xs text-slate-400">
+                  {text(`Frontend demo OTP: ${temporaryOtp}`, `OTP ya demo: ${temporaryOtp}`)}
+                </p>
+              </div>
+            ) : <>
             <div>
               <label
                 htmlFor="business-name"
@@ -485,6 +588,49 @@ function LoginContent() {
                 />
               </div>
             </div>
+
+            {isSignup && (
+              <div>
+                <label
+                  htmlFor="business-country"
+                  className="mb-2 block text-sm font-semibold text-slate-700"
+                >
+                  {text('Country code', 'Koodi y’eggwanga')}
+                </label>
+
+                <select
+                  id="business-country"
+                  value={country}
+                  onChange={(event) =>
+                    setCountry(event.target.value as CountryCode)
+                  }
+                  className="h-13 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10"
+                >
+                  {COUNTRY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label} ({option.value}, {option.dialCode})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {isSignup && (
+              <div>
+                <label htmlFor="business-phone" className="mb-2 block text-sm font-semibold text-slate-700">
+                  {text('Phone number', 'Ennamba ya ssimu')}
+                </label>
+                <input
+                  id="business-phone"
+                  type="tel"
+                  autoComplete="tel"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  placeholder="e.g. 700 000 000"
+                  className="h-13 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10"
+                />
+              </div>
+            )}
 
             <div>
               <div className="mb-2 flex items-center justify-between">
@@ -555,6 +701,7 @@ function LoginContent() {
                 </button>
               </div>
             </div>
+            </>}
 
             {error && (
               <p
@@ -586,7 +733,9 @@ function LoginContent() {
                 />
               ) : (
                 <>
-                  {isSignup
+                  {isOtpStep
+                    ? text('Verify and enter DuukaTalk', 'Kakasa oyingire DuukaTalk')
+                    : isSignup
                     ? text(
                         'Create my account',
                         'Tondawo akaawunti yange',
