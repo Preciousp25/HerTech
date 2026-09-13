@@ -16,6 +16,11 @@ export const metadata: Metadata = {
   title: "DuuKaTalk Ledger",
   description: "Offline-first sales and debt ledger for small shops.",
   applicationName: "DuuKaTalk Ledger",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
   appleWebApp: {
     capable: true,
     title: "DuuKaTalk Ledger",

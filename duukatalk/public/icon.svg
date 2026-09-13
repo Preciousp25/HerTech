@@ -1,5 +1,33 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0f766e"/>
-  <path d="M144 128h224v64H208v64h128v64H208v64h-64V128Z" fill="#fff"/>
-  <circle cx="368" cy="352" r="40" fill="#fbbf24"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="DuuKaTalk favicon">
+  <defs>
+    <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#040d20"/>
+      <stop offset="100%" stop-color="#071a33"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#0b7ef7"/>
+      <stop offset="50%" stop-color="#138df3"/>
+      <stop offset="100%" stop-color="#3ec4ff"/>
+    </linearGradient>
+    <linearGradient id="panel2" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#2d9df4"/>
+      <stop offset="100%" stop-color="#7fe5ff"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="118" fill="url(#bg)"/>
+
+  <path d="M86 164c0-28 21-49 49-49h132c36 0 66 30 66 66v138c0 26-21 47-47 47H118c-31 0-52-25-52-55V164Z" fill="url(#panel)" opacity="0.95"/>
+  <path d="M255 118h107c19 0 34 15 34 34v171c0 18-15 33-34 33H286c-18 0-33-15-33-33V152c0-18 15-34 33-34Z" fill="url(#panel2)" opacity="0.8"/>
+
+  <g fill="#e8f6ff" opacity="0.95">
+    <rect x="118" y="160" width="28" height="110" rx="12"/>
+    <rect x="170" y="160" width="28" height="110" rx="12"/>
+    <rect x="222" y="160" width="28" height="110" rx="12"/>
+    <rect x="286" y="160" width="28" height="110" rx="12"/>
+    <rect x="338" y="160" width="28" height="110" rx="12"/>
+    <rect x="390" y="160" width="28" height="110" rx="12"/>
+  </g>
+
+  <path d="M245 325L254 310L263 325L254 340L245 325Z" fill="#ffffff" opacity="0.9"/>
 </svg>
