@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   setDoc,
@@ -32,40 +33,42 @@ async function getCustomerTransactions(
 }
 
 /**
- * Recalculates outstanding credit for a customer from open credit
- * transactions and writes it to their customer profile.
+ * Fast customer credit update path. When an amount is provided, the customer
+ * profile is incremented in-place instead of scanning every transaction for
+ * the vendor. That keeps record saves predictable and prevents the route from
+ * waiting on a full ledger fan-out recalculation.
  */
 export async function updateCustomerCredit(
   vendorId: string,
   customerName: string,
+  amountDelta?: number,
 ): Promise<number | void> {
   if (!customerName?.trim()) return;
 
   try {
-    const snapshot = await getCustomerTransactions(vendorId, customerName);
-
-    const totalCredit = snapshot.reduce((sum, docSnap) => {
-      const data = docSnap.data();
-      if (!isOutstandingCredit(data)) return sum;
-      return sum + (Number(data.total_amount) || 0);
-    }, 0);
-
-    // Scope the customer profile by vendor too, so two vendors with a
-    // same-named customer don't collide on a single shared profile.
     const customerKey = `${vendorId}_${normalizeCustomerName(customerName)}`;
     const customerRef = doc(db, CUSTOMERS_COLLECTION, customerKey);
+    const customerSnap = await getDoc(customerRef);
+    const currentOutstanding = customerSnap.exists()
+      ? Number(customerSnap.data().outstanding_credit || 0)
+      : 0;
+
+    const nextOutstanding = Number.isFinite(amountDelta)
+      ? currentOutstanding + Number(amountDelta)
+      : currentOutstanding;
+
     await setDoc(
       customerRef,
       {
         vendor_id: vendorId,
         customer_name: customerName.trim(),
-        outstanding_credit: totalCredit,
+        outstanding_credit: nextOutstanding,
         updated_at: new Date().toISOString(),
       },
       { merge: true },
     );
 
-    return totalCredit;
+    return nextOutstanding;
   } catch (error) {
     console.error("Failed to update customer credit:", error);
     throw error;

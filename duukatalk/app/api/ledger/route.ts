@@ -168,10 +168,10 @@ export async function POST(request: NextRequest) {
 
     if (paymentType === "credit") {
       outstandingCredit =
-        (await updateCustomerCredit(vendorId, customer)) ?? undefined;
+        (await updateCustomerCredit(vendorId, customer, amount)) ?? undefined;
     }
 
-    const sms = await notifyAfterTransaction({
+    void notifyAfterTransaction({
       customerName: customer,
       paymentType,
       item,
@@ -181,13 +181,15 @@ export async function POST(request: NextRequest) {
       outstandingCredit,
       customerPhone: body.phone,
       language,
+      vendorId,
+    }).catch((error) => {
+      console.error("Background notification fan-out failed:", error);
     });
 
     return NextResponse.json(
       {
         id: transactionId,
         transaction: firestoreTransaction,
-        sms,
       },
       { status: 201 }
     );

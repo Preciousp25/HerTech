@@ -1,6 +1,6 @@
 import { CREDIT_LIMIT, LARGE_QUANTITY_THRESHOLD, isOutstandingCredit } from "./credit";
 
-export type Language = "EN" | "LUG" | "MIX";
+export type Language = "EN" | "LUG" | "SW" | "AR" | "FR" | "MIX";
 
 export type RiskFlagType = "credit_risk" | "stock_movement" | "due_date" | "cash_vs_credit";
 
@@ -24,14 +24,33 @@ export type RiskTransaction = {
   settled?: boolean;
 };
 
-export function localize(language: Language, english: string, luganda: string): string {
-  if (language === "EN") return english;
-  if (language === "LUG") return luganda;
-  return `${english} · ${luganda}`;
+export function localize(
+  language: Language,
+  english: string,
+  luganda: string,
+  swahili?: string,
+  arabic?: string,
+  french?: string,
+): string {
+  switch (language) {
+    case "LUG":
+      return luganda;
+    case "SW":
+      return swahili || english;
+    case "AR":
+      return arabic || english;
+    case "FR":
+      return french || english;
+    case "MIX":
+      return `${english} · ${luganda}`;
+    case "EN":
+    default:
+      return english;
+  }
 }
 
 export function parseLanguage(value: string | null | undefined): Language {
-  if (value === "EN" || value === "LUG" || value === "MIX") return value;
+  if (value === "EN" || value === "LUG" || value === "SW" || value === "AR" || value === "FR" || value === "MIX") return value as Language;
   return "EN";
 }
 
@@ -60,6 +79,9 @@ export function evaluateRiskFlags(
           language,
           `${name} now owes UGX ${total.toLocaleString()}, over the ${CREDIT_LIMIT.toLocaleString()} limit`,
           `${name} kati alina omubanja gwa UGX ${total.toLocaleString()}, gusukkiridde ekkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}`,
+          `${name} anadaiwa UGX ${total.toLocaleString()}, zaidi ya kikomo cha UGX ${CREDIT_LIMIT.toLocaleString()}`,
+          `${name} مدين الآن بـ UGX ${total.toLocaleString()}، وهو أعلى من الحد ${CREDIT_LIMIT.toLocaleString()}`,
+          `${name} doit maintenant UGX ${total.toLocaleString()}, au-delà de la limite de ${CREDIT_LIMIT.toLocaleString()}`,
         ),
         details: { customerName: name, amountOwed: total, limit: CREDIT_LIMIT },
       });
@@ -75,8 +97,11 @@ export function evaluateRiskFlags(
         severity: "warning",
         message: localize(
           language,
-          `Unusually large quantity recorded for ${txn.item} (${quantity})`,
-          `Omuwendo omunene ogutali bulijjo gulabiddwa ku ${txn.item} (${quantity})`,
+          `Stock movement alert: unusually large quantity recorded for ${txn.item} (${quantity})`,
+          `Okulabula kwa stock: omuwendo omunene ogutali bulijjo gulabiddwa ku ${txn.item} (${quantity})`,
+          `Tahadhari ya hisa: kiasi kikubwa sana kwa ${txn.item} (${quantity})`,
+          `تنبيه مخزون: كمية كبيرة غير معتادة سجلت لـ ${txn.item} (${quantity})`,
+          `Alerte stock : quantité inhabituellement élevée pour ${txn.item} (${quantity})`,
         ),
         details: {
           item: txn.item,
@@ -102,6 +127,9 @@ export function evaluateRiskFlags(
           language,
           `${txn.customer_name}'s payment for ${txn.item} was due ${txn.due_date}`,
           `Okusasula kwa ${txn.customer_name} ku ${txn.item} kwali kutuuse ${txn.due_date}`,
+          `${txn.customer_name}'s malipo ya ${txn.item} yalikuwa yakusubiri ${txn.due_date}`,
+          `استحق الدفع لـ ${txn.customer_name} مقابل ${txn.item} بتاريخ ${txn.due_date}`,
+          `Le paiement de ${txn.customer_name} pour ${txn.item} était dû le ${txn.due_date}`,
         ),
         details: {
           customerName: txn.customer_name,
@@ -129,8 +157,11 @@ export function evaluateRiskFlags(
       severity: "critical",
       message: localize(
         language,
-        `Outstanding credit (UGX ${totalCredit.toLocaleString()}) exceeds cash at hand (UGX ${totalCash.toLocaleString()})`,
-        `Amabanja agasigadde (UGX ${totalCredit.toLocaleString()}) gasukkiridde ssente eziriwo (UGX ${totalCash.toLocaleString()})`,
+        `Cash at hand is lower than outstanding credit: cash UGX ${totalCash.toLocaleString()} vs credit UGX ${totalCredit.toLocaleString()}`,
+        `Ssente eziriwo zisinga obutono okusinga amabanja agasigadde: cash UGX ${totalCash.toLocaleString()} vs credit UGX ${totalCredit.toLocaleString()}`,
+        `Pesa zilizopo ni chache kuliko deni iliyobaki: cash UGX ${totalCash.toLocaleString()} dhidi ya credit UGX ${totalCredit.toLocaleString()}`,
+        `النقد المتوفر أقل من الديون المستحقة: نقد UGX ${totalCash.toLocaleString()} مقابل دين UGX ${totalCredit.toLocaleString()}`,
+        `La trésorerie disponible est inférieure au crédit restant : cash UGX ${totalCash.toLocaleString()} versus crédit UGX ${totalCredit.toLocaleString()}`,
       ),
       details: { totalCash, totalCredit },
     });

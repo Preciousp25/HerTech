@@ -90,6 +90,14 @@ interface ApiTransaction {
 interface ApiSummary {
   totalSales?: number;
   totalCreditOutstanding?: number;
+  perCustomerCredit?: Record<string, number>;
+  recommendedSavings?: number;
+  savingsPercent?: number;
+  loanReadinessScore?: number;
+  loanAdvice?: string;
+  creditToSalesRatio?: number;
+  creditSharePercent?: number;
+  shouldStopLending?: boolean;
 }
 
 interface StoredUser {
@@ -163,10 +171,8 @@ function safeFormatDateTime(value?: string | null): string {
 
   return parsed.toLocaleString();
 }
-function formatCurrency(
-  amount: number,
-  currency?: string
-): string {
+
+function formatCurrency(amount: number, currency?: string): string {
   const code = currency || 'UGX';
 
   return `${code} ${amount.toLocaleString()}`;
@@ -248,17 +254,11 @@ export default function DuukaTalkApp() {
   const activeStreamRef = useRef<MediaStream | null>(null);
 
   // --- VOICE QUESTION REFS ---
-const questionMediaRecorderRef =
-  useRef<MediaRecorder | null>(null);
 
-const questionAudioChunksRef =
-  useRef<Blob[]>([]);
-
-const questionStreamRef =
-  useRef<MediaStream | null>(null);
-
-const questionAudioRef =
-  useRef<HTMLAudioElement | null>(null);
+  const questionMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const questionAudioChunksRef = useRef<Blob[]>([]);
+  const questionStreamRef = useRef<MediaStream | null>(null);
+  const questionAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // --- LEDGER STATE ---
 
@@ -267,24 +267,26 @@ const questionAudioRef =
   >('daily');
 
   const [searchQuery, setSearchQuery] = useState('');
+
   // --- VOICE QUESTION STATE ---
-const [isQuestionRecording, setIsQuestionRecording] =
-  useState<boolean>(false);
 
-const [isQuestionProcessing, setIsQuestionProcessing] =
-  useState<boolean>(false);
+  const [isQuestionRecording, setIsQuestionRecording] =
+    useState<boolean>(false);
 
-const [isQuestionSpeaking, setIsQuestionSpeaking] =
-  useState<boolean>(false);
+  const [isQuestionProcessing, setIsQuestionProcessing] =
+    useState<boolean>(false);
 
-const [questionTranscript, setQuestionTranscript] =
-  useState<string>('');
+  const [isQuestionSpeaking, setIsQuestionSpeaking] =
+    useState<boolean>(false);
 
-const [questionAnswer, setQuestionAnswer] =
-  useState<string>('');
+  const [questionTranscript, setQuestionTranscript] =
+    useState<string>('');
 
-const [questionError, setQuestionError] =
-  useState<string>('');
+  const [questionAnswer, setQuestionAnswer] =
+    useState<string>('');
+
+  const [questionError, setQuestionError] =
+    useState<string>('');
 
   // --- INITIAL LOCAL STORAGE LOAD ---
 
@@ -331,33 +333,27 @@ const [questionError, setQuestionError] =
 
       const data = (await response.json()) as ApiDebt[];
 
-      const databaseDebts: Debt[] = data.map(
-        (debt, index) => {
-          const customer =
-            debt.customerName || 'Unknown customer';
+      const databaseDebts: Debt[] = data.map((debt, index) => {
+        const customer = debt.customerName || 'Unknown customer';
 
-          const amount =
-            typeof debt.amountOwed === 'number'
-              ? debt.amountOwed
-              : Number(debt.amountOwed) || 0;
+        const amount =
+          typeof debt.amountOwed === 'number'
+            ? debt.amountOwed
+            : Number(debt.amountOwed) || 0;
 
-          const dueDates = Array.isArray(debt.dueDates)
-            ? debt.dueDates
-            : [];
+        const dueDates = Array.isArray(debt.dueDates)
+          ? debt.dueDates
+          : [];
 
-          return {
-            id: `debt-${customer}-${index}`,
-            customer,
-            initials: deriveInitials(customer),
-            item: 'Credit balance',
-            amount,
-            dueDate:
-              dueDates.length > 0
-                ? dueDates[0]
-                : 'No due date',
-          };
-        }
-      );
+        return {
+          id: `debt-${customer}-${index}`,
+          customer,
+          initials: deriveInitials(customer),
+          item: 'Credit balance',
+          amount,
+          dueDate: dueDates.length > 0 ? dueDates[0] : 'No due date',
+        };
+      });
 
       setDebts(databaseDebts);
     } catch (error) {
@@ -394,10 +390,7 @@ const [questionError, setQuestionError] =
       const readJson = async <T,>(
         result: PromiseSettledResult<Response>
       ): Promise<T | null> => {
-        if (
-          result.status !== 'fulfilled' ||
-          !result.value.ok
-        ) {
+        if (result.status !== 'fulfilled' || !result.value.ok) {
           failedRoutes += 1;
           return null;
         }
@@ -410,14 +403,8 @@ const [questionError, setQuestionError] =
         }
       };
 
-      const [
-        ledgerData,
-        summaryData,
-        creditData,
-      ] = await Promise.all([
-        readJson<{ transactions?: ApiTransaction[] }>(
-          responses[0]
-        ),
+      const [ledgerData, summaryData, creditData] = await Promise.all([
+        readJson<{ transactions?: ApiTransaction[] }>(responses[0]),
         readJson<ApiSummary>(responses[1]),
         readJson<ApiDebt[]>(responses[2]),
       ]);
@@ -432,71 +419,62 @@ const [questionError, setQuestionError] =
 
       if (ledgerData?.transactions) {
         const databaseTransactions: Transaction[] =
-          ledgerData.transactions.map(
-            (transaction, index) => {
-              const customer =
-                transaction.customer_name ||
-                'Unknown customer';
+          ledgerData.transactions.map((transaction, index) => {
+            const customer =
+              transaction.customer_name || 'Unknown customer';
 
-              const itemParts = [
-                transaction.quantity,
-                transaction.unit,
-                transaction.item,
-              ].filter(
-                (value) =>
-                  value !== undefined &&
-                  value !== null &&
-                  value !== ''
-              );
+            const itemParts = [
+              transaction.quantity,
+              transaction.unit,
+              transaction.item,
+            ].filter(
+              (value) =>
+                value !== undefined && value !== null && value !== ''
+            );
 
-              const amount =
-                typeof transaction.total_amount === 'number'
-                  ? transaction.total_amount
-                  : Number(transaction.total_amount) || 0;
+            const amount =
+              typeof transaction.total_amount === 'number'
+                ? transaction.total_amount
+                : Number(transaction.total_amount) || 0;
 
-              const paymentType =
-                transaction.payment_type ||
-                transaction.type ||
-                'cash';
+            const paymentType =
+              transaction.payment_type || transaction.type || 'cash';
 
-              return {
-                id:
-                  transaction.id ||
-                  transaction.transaction_id ||
-                  `database-${index}`,
+            return {
+              id:
+                transaction.id ||
+                transaction.transaction_id ||
+                `database-${index}`,
 
-                customer,
+              customer,
 
-                initials: deriveInitials(customer),
+              initials: deriveInitials(customer),
 
-                item:
-                  itemParts.length > 0
-                    ? itemParts.join(' ')
-                    : 'Recorded transaction',
+              item:
+                itemParts.length > 0
+                  ? itemParts.join(' ')
+                  : 'Recorded transaction',
 
-                amount,
+              amount,
 
-                type:
-                  paymentType.toLowerCase() === 'credit'
-                    ? 'credit'
-                    : 'cash',
+              type:
+                paymentType.toLowerCase() === 'credit'
+                  ? 'credit'
+                  : 'cash',
 
-                dueDate: transaction.due_date
-                  ? `Due ${new Date(
-                      transaction.due_date
-                    ).toLocaleDateString()}`
-                  : undefined,
+              dueDate: transaction.due_date
+                ? `Due ${new Date(
+                    transaction.due_date
+                  ).toLocaleDateString()}`
+                : undefined,
 
-                date: transaction.timestamp
-                  ? new Date(
-                      transaction.timestamp
-                    ).toLocaleString()
-                  : 'Recently',
+              date: transaction.timestamp
+                ? new Date(transaction.timestamp).toLocaleString()
+                : 'Recently',
 
-                timestamp: transaction.timestamp,
-              };
-            }
-          );
+              timestamp: transaction.timestamp,
+            };
+          });
 
         setTransactions(databaseTransactions);
       } else {
@@ -518,34 +496,27 @@ const [questionError, setQuestionError] =
       // ---------------------------------------------------------
 
       if (creditData) {
-        const databaseDebts: Debt[] =
-          creditData.map((debt, index) => {
-            const customer =
-              debt.customerName ||
-              'Unknown customer';
+        const databaseDebts: Debt[] = creditData.map((debt, index) => {
+          const customer = debt.customerName || 'Unknown customer';
 
-            const amount =
-              typeof debt.amountOwed === 'number'
-                ? debt.amountOwed
-                : Number(debt.amountOwed) || 0;
+          const amount =
+            typeof debt.amountOwed === 'number'
+              ? debt.amountOwed
+              : Number(debt.amountOwed) || 0;
 
-            const dueDates =
-              Array.isArray(debt.dueDates)
-                ? debt.dueDates
-                : [];
+          const dueDates = Array.isArray(debt.dueDates)
+            ? debt.dueDates
+            : [];
 
-            return {
-              id: `debt-${customer}-${index}`,
-              customer,
-              initials: deriveInitials(customer),
-              item: 'Credit balance',
-              amount,
-              dueDate:
-                dueDates.length > 0
-                  ? dueDates[0]
-                  : 'No due date',
-            };
-          });
+          return {
+            id: `debt-${customer}-${index}`,
+            customer,
+            initials: deriveInitials(customer),
+            item: 'Credit balance',
+            amount,
+            dueDate: dueDates.length > 0 ? dueDates[0] : 'No due date',
+          };
+        });
 
         setDebts(databaseDebts);
       } else {
@@ -584,52 +555,44 @@ const [questionError, setQuestionError] =
   // FILTER TRANSACTIONS
   // =========================================================
 
-  const filteredTransactions = transactions.filter(
-    (transaction) => {
-      const query = searchQuery.trim().toLowerCase();
+  const filteredTransactions = transactions.filter((transaction) => {
+    const query = searchQuery.trim().toLowerCase();
 
-      return (
-        !query ||
-        [
-          transaction.customer,
-          transaction.item,
-          transaction.type,
-        ].some((value) =>
-          value.toLowerCase().includes(query)
-        )
-      );
-    }
-  );
+    return (
+      !query ||
+      [transaction.customer, transaction.item, transaction.type].some(
+        (value) => value.toLowerCase().includes(query)
+      )
+    );
+  });
+
   const notifications = [
-  ...debts
-    .filter((debt) => debt.amount > 200000)
-    .map((debt) => ({
-      id: `debt-${debt.id}`,
-      message: `${debt.customer} has an outstanding debt of UGX ${debt.amount.toLocaleString()}.`,
-    })),
+    ...debts
+      .filter((debt) => debt.amount > 200000)
+      .map((debt) => ({
+        id: `debt-${debt.id}`,
+        message: `${debt.customer} has an outstanding debt of UGX ${debt.amount.toLocaleString()}.`,
+      })),
 
-  ...debts
-    .filter((debt) => {
-      if (!debt.dueDate) return false;
+    ...debts
+      .filter((debt) => {
+        if (!debt.dueDate) return false;
 
-      const dueDate = new Date(debt.dueDate).getTime();
+        const dueDate = new Date(debt.dueDate).getTime();
 
-      return !Number.isNaN(dueDate) && dueDate < reportNow;
-    })
-    .map((debt) => ({
-      id: `overdue-${debt.id}`,
-      message: `${debt.customer}'s debt is overdue.`,
-    })),
-];
+        return !Number.isNaN(dueDate) && dueDate < reportNow;
+      })
+      .map((debt) => ({
+        id: `overdue-${debt.id}`,
+        message: `${debt.customer}'s debt is overdue.`,
+      })),
+  ];
 
   // =========================================================
   // HELPERS
   // =========================================================
 
-  const text = (
-    english: string,
-    legacyLuganda?: string
-  ) => {
+  const text = (english: string, legacyLuganda?: string) => {
     void legacyLuganda;
     return translate(language, english);
   };
@@ -647,55 +610,42 @@ const [questionError, setQuestionError] =
     });
   };
 
-  const handleLanguageChange = (
-    nextLanguage: Language
-  ) => {
+  const handleLanguageChange = (nextLanguage: Language) => {
     setLanguage(nextLanguage);
 
-    window.localStorage.setItem(
-      'duukatalk-language',
-      nextLanguage
-    );
+    window.localStorage.setItem('duukatalk-language', nextLanguage);
   };
 
-  
   // =========================================================
   // PRIVACY SETTINGS
   // =========================================================
 
   const handleSavePrivacy = async () => {
     if (newPin && !/^\d{4}$/.test(newPin)) {
-      setSettingsMessage(
-        'PIN must be exactly 4 digits.'
-      );
+      setSettingsMessage('PIN must be exactly 4 digits.');
 
       return;
     }
 
-    const response = await fetch(
-      '/api/auth/profile',
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          pin: newPin || undefined,
-          phone: newPhone || undefined,
-        }),
-      }
-    );
+    const response = await fetch('/api/auth/profile', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        pin: newPin || undefined,
+        phone: newPhone || undefined,
+      }),
+    });
 
-    const data =
-      (await response.json().catch(() => null)) as {
-        error?: string;
-        phone?: string;
-      } | null;
+    const data = (await response.json().catch(() => null)) as {
+      error?: string;
+      phone?: string;
+    } | null;
 
     if (!response.ok) {
       setSettingsMessage(
-        data?.error ||
-          'Could not save privacy settings.'
+        data?.error || 'Could not save privacy settings.'
       );
 
       return;
@@ -703,10 +653,7 @@ const [questionError, setQuestionError] =
 
     const nextUser = {
       ...user,
-      phone:
-        data?.phone ||
-        newPhone ||
-        user.phone,
+      phone: data?.phone || newPhone || user.phone,
     };
 
     setUser(nextUser);
@@ -717,9 +664,7 @@ const [questionError, setQuestionError] =
     );
 
     setNewPin('');
-    setSettingsMessage(
-      'Privacy settings saved.'
-    );
+    setSettingsMessage('Privacy settings saved.');
   };
 
   // =========================================================
@@ -731,9 +676,7 @@ const [questionError, setQuestionError] =
       method: 'POST',
     });
 
-    window.localStorage.removeItem(
-      'duukatalk-user'
-    );
+    window.localStorage.removeItem('duukatalk-user');
 
     router.push('/login');
   };
@@ -742,9 +685,7 @@ const [questionError, setQuestionError] =
   // EDIT TRANSACTION
   // =========================================================
 
-  const handleStartEdit = (
-    transaction: Transaction
-  ) => {
+  const handleStartEdit = (transaction: Transaction) => {
     setEditingTransaction(transaction);
     setEditError('');
 
@@ -753,11 +694,7 @@ const [questionError, setQuestionError] =
       item: transaction.item,
       amount: String(transaction.amount),
       paymentType: transaction.type,
-      dueDate:
-        transaction.dueDate?.replace(
-          /^Due\s+/i,
-          ''
-        ) || '',
+      dueDate: transaction.dueDate?.replace(/^Due\s+/i, '') || '',
     });
   };
 
@@ -775,21 +712,11 @@ const [questionError, setQuestionError] =
       return;
     }
 
-    const customer =
-      editFormData.customer.trim();
+    const customer = editFormData.customer.trim();
+    const item = editFormData.item.trim();
+    const amount = Number(editFormData.amount);
 
-    const item =
-      editFormData.item.trim();
-
-    const amount =
-      Number(editFormData.amount);
-
-    if (
-      !customer ||
-      !item ||
-      !Number.isFinite(amount) ||
-      amount <= 0
-    ) {
+    if (!customer || !item || !Number.isFinite(amount) || amount <= 0) {
       setEditError(
         text(
           'Please enter a customer, item, and valid amount.',
@@ -805,9 +732,7 @@ const [questionError, setQuestionError] =
 
     try {
       const response = await fetch(
-        `/api/ledger/${encodeURIComponent(
-          editingTransaction.id
-        )}`,
+        `/api/ledger/${encodeURIComponent(editingTransaction.id)}`,
         {
           method: 'PUT',
           headers: {
@@ -817,11 +742,9 @@ const [questionError, setQuestionError] =
             customer_name: customer,
             item,
             total_amount: amount,
-            payment_type:
-              editFormData.paymentType,
+            payment_type: editFormData.paymentType,
             due_date:
-              editFormData.paymentType ===
-                'credit' &&
+              editFormData.paymentType === 'credit' &&
               editFormData.dueDate.trim()
                 ? editFormData.dueDate.trim()
                 : null,
@@ -829,9 +752,7 @@ const [questionError, setQuestionError] =
         }
       );
 
-      const data = await response
-        .json()
-        .catch(() => null);
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
         throw new Error(
@@ -843,32 +764,24 @@ const [questionError, setQuestionError] =
         );
       }
 
-      setTransactions(
-        (currentTransactions) =>
-          currentTransactions.map(
-            (transaction) =>
-              transaction.id ===
-              editingTransaction.id
-                ? {
-                    ...transaction,
-                    customer,
-                    initials:
-                      deriveInitials(
-                        customer
-                      ),
-                    item,
-                    amount,
-                    type:
-                      editFormData.paymentType,
-                    dueDate:
-                      editFormData.paymentType ===
-                        'credit' &&
-                      editFormData.dueDate.trim()
-                        ? `Due ${editFormData.dueDate.trim()}`
-                        : undefined,
-                  }
-                : transaction
-          )
+      setTransactions((currentTransactions) =>
+        currentTransactions.map((transaction) =>
+          transaction.id === editingTransaction.id
+            ? {
+                ...transaction,
+                customer,
+                initials: deriveInitials(customer),
+                item,
+                amount,
+                type: editFormData.paymentType,
+                dueDate:
+                  editFormData.paymentType === 'credit' &&
+                  editFormData.dueDate.trim()
+                    ? `Due ${editFormData.dueDate.trim()}`
+                    : undefined,
+              }
+            : transaction
+        )
       );
 
       setEditingTransaction(null);
@@ -881,8 +794,7 @@ const [questionError, setQuestionError] =
       );
 
       try {
-        const summaryResponse =
-          await fetch('/api/summary');
+        const summaryResponse = await fetch('/api/summary');
 
         if (summaryResponse.ok) {
           const updatedSummary =
@@ -913,9 +825,7 @@ const [questionError, setQuestionError] =
   // DELETE TRANSACTION
   // =========================================================
 
-  const handleStartDelete = (
-    transaction: Transaction
-  ) => {
+  const handleStartDelete = (transaction: Transaction) => {
     setDeletingTransaction(transaction);
     setDeleteError('');
   };
@@ -939,17 +849,13 @@ const [questionError, setQuestionError] =
 
     try {
       const response = await fetch(
-        `/api/ledger/${encodeURIComponent(
-          deletingTransaction.id
-        )}`,
+        `/api/ledger/${encodeURIComponent(deletingTransaction.id)}`,
         {
           method: 'DELETE',
         }
       );
 
-      const data = await response
-        .json()
-        .catch(() => null);
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
         throw new Error(
@@ -961,21 +867,16 @@ const [questionError, setQuestionError] =
         );
       }
 
-      const deletedId =
-        deletingTransaction.id;
+      const deletedId = deletingTransaction.id;
 
-      setTransactions(
-        (currentTransactions) =>
-          currentTransactions.filter(
-            (transaction) =>
-              transaction.id !== deletedId
-          )
+      setTransactions((currentTransactions) =>
+        currentTransactions.filter(
+          (transaction) => transaction.id !== deletedId
+        )
       );
 
       setDebts((currentDebts) =>
-        currentDebts.filter(
-          (debt) => debt.id !== deletedId
-        )
+        currentDebts.filter((debt) => debt.id !== deletedId)
       );
 
       setDeletingTransaction(null);
@@ -988,8 +889,7 @@ const [questionError, setQuestionError] =
       );
 
       try {
-        const summaryResponse =
-          await fetch('/api/summary');
+        const summaryResponse = await fetch('/api/summary');
 
         if (summaryResponse.ok) {
           const updatedSummary =
@@ -1020,19 +920,12 @@ const [questionError, setQuestionError] =
   // MANUAL ENTRY
   // =========================================================
 
-  const handleSaveEntry = (
-    event: FormEvent<HTMLFormElement>
-  ) => {
+  const handleSaveEntry = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const amount =
-      Number(formData.amount);
+    const amount = Number(formData.amount);
 
-    if (
-      !formData.customer.trim() ||
-      !formData.item.trim() ||
-      !amount
-    ) {
+    if (!formData.customer.trim() || !formData.item.trim() || !amount) {
       setFormMessage(
         text(
           'Add a customer, item, and amount first.',
@@ -1043,31 +936,24 @@ const [questionError, setQuestionError] =
       return;
     }
 
-    const customerName =
-      formData.customer.trim();
+    const customerName = formData.customer.trim();
 
     const newTransaction: Transaction = {
       id: crypto.randomUUID(),
       customer: customerName,
-      initials:
-        deriveInitials(customerName),
+      initials: deriveInitials(customerName),
       item: formData.item.trim(),
       amount,
       type: formData.paymentType,
-      dueDate:
-        formData.paymentType === 'credit'
-          ? 'Due soon'
-          : undefined,
+      dueDate: formData.paymentType === 'credit' ? 'Due soon' : undefined,
       date: 'Just now',
       timestamp: new Date().toISOString(),
     };
 
-    setTransactions(
-      (currentTransactions) => [
-        newTransaction,
-        ...currentTransactions,
-      ]
-    );
+    setTransactions((currentTransactions) => [
+      newTransaction,
+      ...currentTransactions,
+    ]);
 
     if (newTransaction.type === 'credit') {
       setDebts((currentDebts) => [
@@ -1102,54 +988,33 @@ const [questionError, setQuestionError] =
 
   const handleExport = () => {
     const csvRows = [
-      [
-        'Customer',
-        'Item',
-        'Amount (UGX)',
-        'Type',
-        'Date',
-      ],
+      ['Customer', 'Item', 'Amount (UGX)', 'Type', 'Date'],
 
-      ...filteredTransactions.map(
-        (transaction) => [
-          transaction.customer,
-          transaction.item,
-          String(transaction.amount),
-          transaction.type,
-          transaction.date,
-        ]
-      ),
+      ...filteredTransactions.map((transaction) => [
+        transaction.customer,
+        transaction.item,
+        String(transaction.amount),
+        transaction.type,
+        transaction.date,
+      ]),
     ];
 
     const csv = csvRows
       .map((row) =>
-        row
-          .map(
-            (value) =>
-              `"${value.replaceAll(
-                '"',
-                '""'
-              )}"`
-          )
-          .join(',')
+        row.map((value) => `"${value.replaceAll('"', '""')}"`).join(',')
       )
       .join('\n');
 
-    const downloadUrl =
-      URL.createObjectURL(
-        new Blob([csv], {
-          type: 'text/csv;charset=utf-8;',
-        })
-      );
+    const downloadUrl = URL.createObjectURL(
+      new Blob([csv], {
+        type: 'text/csv;charset=utf-8;',
+      })
+    );
 
-    const downloadLink =
-      document.createElement('a');
+    const downloadLink = document.createElement('a');
 
     downloadLink.href = downloadUrl;
-
-    downloadLink.download =
-      'duukatalk-ledger.csv';
-
+    downloadLink.download = 'duukatalk-ledger.csv';
     downloadLink.click();
 
     URL.revokeObjectURL(downloadUrl);
@@ -1160,43 +1025,31 @@ const [questionError, setQuestionError] =
   // =========================================================
 
   const stopMicrophoneTracks = () => {
-    activeStreamRef.current
-      ?.getTracks()
-      .forEach((track) => track.stop());
+    activeStreamRef.current?.getTracks().forEach((track) => track.stop());
 
     activeStreamRef.current = null;
   };
 
-  const uploadRecording = async (
-    audioBlob: Blob
-  ) => {
+  const uploadRecording = async (audioBlob: Blob) => {
     setIsProcessing(true);
     setMicError('');
 
     try {
-      const formData = new FormData();
+      const uploadFormData = new FormData();
 
-      formData.append(
-        'audio',
-        audioBlob,
-        'recording.webm'
-      );
+      uploadFormData.append('audio', audioBlob, 'recording.webm');
+      uploadFormData.append('language', language);
+      uploadFormData.append('acknowledgedWarning', 'false');
 
-      const response = await fetch(
-        '/api/voice-to-json',
-        {
-          method: 'POST',
-          body: formData,
-        }
-      );
+      const response = await fetch('/api/voice-to-json', {
+        method: 'POST',
+        body: uploadFormData,
+      });
 
       if (!response.ok) {
-        const errorData =
-          (await response
-            .json()
-            .catch(() => null)) as {
-            error?: string;
-          } | null;
+        const errorData = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
 
         setMicError(
           errorData?.error ||
@@ -1212,8 +1065,7 @@ const [questionError, setQuestionError] =
       let data: VoiceToJsonResponse;
 
       try {
-        data =
-          (await response.json()) as VoiceToJsonResponse;
+        data = (await response.json()) as VoiceToJsonResponse;
       } catch {
         setMicError(
           text(
@@ -1225,11 +1077,7 @@ const [questionError, setQuestionError] =
         return;
       }
 
-      if (
-        !data ||
-        !data.success ||
-        !data.transaction
-      ) {
+      if (!data || !data.success || !data.transaction) {
         setMicError(
           data?.error ||
             text(
@@ -1241,8 +1089,7 @@ const [questionError, setQuestionError] =
         return;
       }
 
-      // IMPORTANT:
-      // Use the real Firestore document ID.
+      // IMPORTANT: use the real Firestore document ID.
       if (!data.transactionId) {
         console.error(
           'Voice transaction was saved but no transactionId was returned.'
@@ -1258,85 +1105,50 @@ const [questionError, setQuestionError] =
         return;
       }
 
-      const voiceTx =
-        data.transaction;
+      const voiceTx = data.transaction;
 
       const customerName =
-        voiceTx.customerName?.trim() ||
-        'Unknown customer';
+        voiceTx.customerName?.trim() || 'Unknown customer';
 
       const quantity =
-        typeof voiceTx.quantity ===
-          'number' &&
-        !Number.isNaN(
-          voiceTx.quantity
-        )
+        typeof voiceTx.quantity === 'number' &&
+        !Number.isNaN(voiceTx.quantity)
           ? voiceTx.quantity
           : null;
 
       const unitPrice =
-        typeof voiceTx.unitPrice ===
-          'number' &&
-        !Number.isNaN(
-          voiceTx.unitPrice
-        )
+        typeof voiceTx.unitPrice === 'number' &&
+        !Number.isNaN(voiceTx.unitPrice)
           ? voiceTx.unitPrice
           : null;
 
       const amount =
-        quantity !== null &&
-        unitPrice !== null
+        quantity !== null && unitPrice !== null
           ? quantity * unitPrice
           : 0;
 
-      const itemParts = [
-        quantity,
-        voiceTx.unit,
-        voiceTx.item,
-      ].filter(
-        (
-          part
-        ): part is string | number =>
-          part !== null &&
-          part !== undefined &&
-          part !== ''
+      const itemParts = [quantity, voiceTx.unit, voiceTx.item].filter(
+        (part): part is string | number =>
+          part !== null && part !== undefined && part !== ''
       );
 
       const itemLabel =
         itemParts.length > 0
           ? itemParts.join(' ')
-          : text(
-              'Recorded item',
-              'Ekintu ekiwandiikiddwa'
-            );
+          : text('Recorded item', 'Ekintu ekiwandiikiddwa');
 
       const paymentType: Transaction['type'] =
-        voiceTx.paymentType ===
-        'credit'
-          ? 'credit'
-          : 'cash';
+        voiceTx.paymentType === 'credit' ? 'credit' : 'cash';
 
-      const dueDateLabel =
-        safeFormatDate(
-          voiceTx.dueDate
-        );
+      const dueDateLabel = safeFormatDate(voiceTx.dueDate);
 
       const newTransaction: Transaction = {
         id: data.transactionId,
-
         customer: customerName,
-
-        initials:
-          deriveInitials(
-            customerName
-          ),
-
+        initials: deriveInitials(customerName),
         item: itemLabel,
-
         amount,
-
         type: paymentType,
-
         dueDate:
           paymentType === 'credit'
             ? dueDateLabel
@@ -1345,46 +1157,28 @@ const [questionError, setQuestionError] =
             : dueDateLabel
               ? `Due ${dueDateLabel}`
               : undefined,
-
-        date: safeFormatDateTime(
-          voiceTx.timestamp
-        ),
+        date: safeFormatDateTime(voiceTx.timestamp),
       };
 
-      setTranscript(
-        data.transcript || ''
-      );
+      setTranscript(data.transcript || '');
 
-      setTransactions(
-        (currentTransactions) => [
-          newTransaction,
-          ...currentTransactions,
-        ]
-      );
+      setTransactions((currentTransactions) => [
+        newTransaction,
+        ...currentTransactions,
+      ]);
 
-      if (
-        newTransaction.type ===
-        'credit'
-      ) {
-        setDebts(
-          (currentDebts) => [
-            {
-              id: newTransaction.id,
-              customer:
-                newTransaction.customer,
-              initials:
-                newTransaction.initials,
-              item:
-                newTransaction.item,
-              amount:
-                newTransaction.amount,
-              dueDate:
-                newTransaction.dueDate ||
-                'Due soon',
-            },
-            ...currentDebts,
-          ]
-        );
+      if (newTransaction.type === 'credit') {
+        setDebts((currentDebts) => [
+          {
+            id: newTransaction.id,
+            customer: newTransaction.customer,
+            initials: newTransaction.initials,
+            item: newTransaction.item,
+            amount: newTransaction.amount,
+            dueDate: newTransaction.dueDate || 'Due soon',
+          },
+          ...currentDebts,
+        ]);
       }
 
       setFormMessage(
@@ -1395,7 +1189,9 @@ const [questionError, setQuestionError] =
       );
 
       setActiveTab('ledgers');
-    } catch {
+    } catch (error) {
+      console.error('Voice upload failed:', error);
+
       setMicError(
         text(
           'Something went wrong uploading your recording. Please check your connection and try again.',
@@ -1425,10 +1221,7 @@ const [questionError, setQuestionError] =
       return;
     }
 
-    if (
-      typeof MediaRecorder ===
-      'undefined'
-    ) {
+    if (typeof MediaRecorder === 'undefined') {
       setMicError(
         text(
           'Voice recording is not supported in this browser.',
@@ -1440,70 +1233,40 @@ const [questionError, setQuestionError] =
     }
 
     try {
-      const stream =
-        await navigator.mediaDevices.getUserMedia(
-          {
-            audio: true,
-          }
-        );
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
 
-      activeStreamRef.current =
-        stream;
+      activeStreamRef.current = stream;
 
-      const preferredMimeType =
-        'audio/webm';
+      const preferredMimeType = 'audio/webm';
 
-      const recorder =
-        MediaRecorder.isTypeSupported(
-          preferredMimeType
-        )
-          ? new MediaRecorder(
-              stream,
-              {
-                mimeType:
-                  preferredMimeType,
-              }
-            )
-          : new MediaRecorder(
-              stream
-            );
+      const recorder = MediaRecorder.isTypeSupported(preferredMimeType)
+        ? new MediaRecorder(stream, {
+            mimeType: preferredMimeType,
+          })
+        : new MediaRecorder(stream);
 
       audioChunksRef.current = [];
 
-      recorder.ondataavailable = (
-        event: BlobEvent
-      ) => {
-        if (
-          event.data &&
-          event.data.size > 0
-        ) {
-          audioChunksRef.current.push(
-            event.data
-          );
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
         }
       };
 
       recorder.onstop = () => {
         stopMicrophoneTracks();
 
-        const mimeType =
-          recorder.mimeType ||
-          preferredMimeType;
+        const mimeType = recorder.mimeType || preferredMimeType;
 
-        const audioBlob =
-          new Blob(
-            audioChunksRef.current,
-            {
-              type: mimeType,
-            }
-          );
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: mimeType,
+        });
 
-        audioChunksRef.current =
-          [];
+        audioChunksRef.current = [];
 
-        void uploadRecording(
-          audioBlob
-        );
+        void uploadRecording(audioBlob);
       };
 
       recorder.onerror = () => {
@@ -1519,8 +1282,7 @@ const [questionError, setQuestionError] =
         );
       };
 
-      mediaRecorderRef.current =
-        recorder;
+      mediaRecorderRef.current = recorder;
 
       recorder.start();
 
@@ -1538,14 +1300,9 @@ const [questionError, setQuestionError] =
   };
 
   const stopRecording = () => {
-    const recorder =
-      mediaRecorderRef.current;
+    const recorder = mediaRecorderRef.current;
 
-    if (
-      recorder &&
-      recorder.state !==
-        'inactive'
-    ) {
+    if (recorder && recorder.state !== 'inactive') {
       recorder.stop();
     } else {
       stopMicrophoneTracks();
@@ -1566,248 +1323,158 @@ const [questionError, setQuestionError] =
     }
   };
 
-  const micStatusText =
-    isProcessing
-      ? text(
-          'Processing...',
-          'Nkola...'
-        )
-      : isRecording
-        ? text(
-            'Listening...',
-            'Mpuliriza...'
-          )
-        : text(
-            'Tap to Speak',
-            'Nyiga Owogerere'
-          );
+  const micStatusText = isProcessing
+    ? text('Processing...', 'Nkola...')
+    : isRecording
+      ? text('Listening...', 'Mpuliriza...')
+      : text('Tap to Speak', 'Nyiga Owogerere');
 
-  const micAriaLabel =
-    isProcessing
-      ? text(
-          'Processing recording',
-          'Nkola ku ky’owogedde'
-        )
-      : isRecording
-        ? text(
-            'Stop recording',
-            'Koma okuwandiika'
-          )
-        : text(
-            'Start recording',
-            'Tandika okuwandiika'
-          );
+  const micAriaLabel = isProcessing
+    ? text('Processing recording', 'Nkola ku ky’owogedde')
+    : isRecording
+      ? text('Stop recording', 'Koma okuwandiika')
+      : text('Start recording', 'Tandika okuwandiika');
 
-  const micStatusMessage =
-    isProcessing
-      ? text(
-          'Processing your recording…',
-          'Tukola ku ky’owogedde…'
-        )
-      : micError
-        ? micError
-        : transcript
-          ? `${text(
-              'Heard',
-              'Kye mpulidde'
-            )}: "${transcript}"`
-          : '';
-
-
+  const micStatusMessage = isProcessing
+    ? text('Processing your recording…', 'Tukola ku ky’owogedde…')
+    : micError
+      ? micError
+      : transcript
+        ? `${text('Heard', 'Kye mpulidde')}: "${transcript}"`
+        : '';
 
   const stopQuestionMicrophoneTracks = () => {
-  questionStreamRef.current
-    ?.getTracks()
-    .forEach((track) => track.stop());
-
-  questionStreamRef.current = null;
-};
-const startQuestionRecording = async () => {
-  if (
-    isQuestionRecording ||
-    isQuestionProcessing
-  ) {
-    return;
-  }
-
-  try {
-    setQuestionError('');
-    setQuestionTranscript('');
-    setQuestionAnswer('');
-
-    if (
-      typeof window === 'undefined' ||
-      !navigator.mediaDevices?.getUserMedia
-    ) {
-      setQuestionError(
-        'Microphone access is not supported in this browser.'
-      );
-
-      return;
-    }
-
-    if (
-      typeof MediaRecorder ===
-      'undefined'
-    ) {
-      setQuestionError(
-        'Voice recording is not supported in this browser.'
-      );
-
-      return;
-    }
-
-    const stream =
-      await navigator.mediaDevices.getUserMedia(
-        {
-          audio: true,
-        }
-      );
-
-    questionStreamRef.current =
-      stream;
-
-    // Use the exact same recording format
-    // as the working transaction recorder.
-    const preferredMimeType =
-      'audio/webm';
-
-    const recorder =
-      MediaRecorder.isTypeSupported(
-        preferredMimeType
-      )
-        ? new MediaRecorder(
-            stream,
-            {
-              mimeType:
-                preferredMimeType,
-            }
-          )
-        : new MediaRecorder(
-            stream
-          );
-
-    questionMediaRecorderRef.current =
-      recorder;
-
-    questionAudioChunksRef.current =
-      [];
-
-    recorder.ondataavailable = (
-      event: BlobEvent
-    ) => {
-      if (
-        event.data &&
-        event.data.size > 0
-      ) {
-        questionAudioChunksRef.current.push(
-          event.data
-        );
-      }
-    };
-
-    recorder.onstop = () => {
-      stopQuestionMicrophoneTracks();
-
-      setIsQuestionRecording(false);
-
-      const mimeType =
-        recorder.mimeType ||
-        preferredMimeType;
-
-      const audioBlob =
-        new Blob(
-          questionAudioChunksRef.current,
-          {
-            type: mimeType,
-          }
-        );
-console.log('Question audio:', {
-  size: audioBlob.size,
-  type: audioBlob.type,
-  chunks: questionAudioChunksRef.current.length,
-});
-      questionAudioChunksRef.current =
-        [];
-
-      void askVoiceQuestion(
-        audioBlob
-      );
-    };
-
-    recorder.onerror = () => {
-      stopQuestionMicrophoneTracks();
-
-      setIsQuestionRecording(false);
-
-      setQuestionError(
-        'Recording failed. Please try again.'
-      );
-    };
-
-    recorder.start();
-
-    setIsQuestionRecording(true);
-  } catch (error) {
-    console.error(
-      'Failed to start question recording:',
-      error
-    );
-
     questionStreamRef.current
       ?.getTracks()
       .forEach((track) => track.stop());
 
-    questionStreamRef.current =
-      null;
+    questionStreamRef.current = null;
+  };
 
-    setIsQuestionRecording(false);
+  const startQuestionRecording = async () => {
+    if (isQuestionRecording || isQuestionProcessing) {
+      return;
+    }
 
-    setQuestionError(
-      'Could not access the microphone.'
-    );
-  }
-};
+    try {
+      setQuestionError('');
+      setQuestionTranscript('');
+      setQuestionAnswer('');
+
+      if (
+        typeof window === 'undefined' ||
+        !navigator.mediaDevices?.getUserMedia
+      ) {
+        setQuestionError(
+          'Microphone access is not supported in this browser.'
+        );
+
+        return;
+      }
+
+      if (typeof MediaRecorder === 'undefined') {
+        setQuestionError(
+          'Voice recording is not supported in this browser.'
+        );
+
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+
+      questionStreamRef.current = stream;
+
+      // Use the exact same recording format as the working
+      // transaction recorder.
+      const preferredMimeType = 'audio/webm';
+
+      const recorder = MediaRecorder.isTypeSupported(preferredMimeType)
+        ? new MediaRecorder(stream, {
+            mimeType: preferredMimeType,
+          })
+        : new MediaRecorder(stream);
+
+      questionMediaRecorderRef.current = recorder;
+
+      questionAudioChunksRef.current = [];
+
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          questionAudioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        stopQuestionMicrophoneTracks();
+
+        setIsQuestionRecording(false);
+
+        const mimeType = recorder.mimeType || preferredMimeType;
+
+        const audioBlob = new Blob(questionAudioChunksRef.current, {
+          type: mimeType,
+        });
+
+        questionAudioChunksRef.current = [];
+
+        void askVoiceQuestion(audioBlob);
+      };
+
+      recorder.onerror = () => {
+        stopQuestionMicrophoneTracks();
+
+        setIsQuestionRecording(false);
+
+        setQuestionError('Recording failed. Please try again.');
+      };
+
+      recorder.start();
+
+      setIsQuestionRecording(true);
+    } catch (error) {
+      console.error('Failed to start question recording:', error);
+
+      questionStreamRef.current
+        ?.getTracks()
+        .forEach((track) => track.stop());
+
+      questionStreamRef.current = null;
+
+      setIsQuestionRecording(false);
+
+      setQuestionError('Could not access the microphone.');
+    }
+  };
+
   const stopQuestionRecording = () => {
-  const recorder =
-    questionMediaRecorderRef.current;
+    const recorder = questionMediaRecorderRef.current;
 
-  if (
-    recorder &&
-    recorder.state !== 'inactive'
-  ) {
-    recorder.stop();
-  } else {
-    stopQuestionMicrophoneTracks();
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    } else {
+      stopQuestionMicrophoneTracks();
 
-    setIsQuestionRecording(false);
-  }
-};
+      setIsQuestionRecording(false);
+    }
+  };
 
-    const askVoiceQuestion = async (
-    audioBlob: Blob
-  ) => {
+  const askVoiceQuestion = async (audioBlob: Blob) => {
     setIsQuestionProcessing(true);
     setQuestionError('');
     setQuestionAnswer('');
     setQuestionTranscript('');
 
     try {
-      const formData = new FormData();
+      const questionFormData = new FormData();
 
-      formData.append(
-        'audio',
-        audioBlob,
-        'question.webm'
-      );
+      questionFormData.append('audio', audioBlob, 'question.webm');
 
-      const response = await fetch(
-        '/api/query',
-        {
-          method: 'POST',
-          body: formData,
-        }
-      );
+      const response = await fetch('/api/query', {
+        method: 'POST',
+        body: questionFormData,
+      });
 
       const data = (await response.json()) as {
         question?: string;
@@ -1817,41 +1484,27 @@ console.log('Question audio:', {
       };
 
       if (!response.ok) {
-        throw new Error(
-          data.error ||
-            'Could not process your question.'
-        );
+        throw new Error(data.error || 'Could not process your question.');
       }
 
       if (!data.question) {
-        throw new Error(
-          'No question transcript was returned.'
-        );
+        throw new Error('No question transcript was returned.');
       }
 
       if (!data.answer_text) {
-        throw new Error(
-          'No answer was returned.'
-        );
+        throw new Error('No answer was returned.');
       }
 
-      setQuestionTranscript(
-        data.question
-      );
+      setQuestionTranscript(data.question);
 
-      setQuestionAnswer(
-        data.answer_text
-      );
+      setQuestionAnswer(data.answer_text);
 
       if (data.audio_url) {
         setIsQuestionSpeaking(true);
 
-        const audio = new Audio(
-          data.audio_url
-        );
+        const audio = new Audio(data.audio_url);
 
-        questionAudioRef.current =
-          audio;
+        questionAudioRef.current = audio;
 
         audio.onended = () => {
           setIsQuestionSpeaking(false);
@@ -1862,18 +1515,13 @@ console.log('Question audio:', {
           setIsQuestionSpeaking(false);
           questionAudioRef.current = null;
 
-          setQuestionError(
-            'I could not play the spoken response.'
-          );
+          setQuestionError('I could not play the spoken response.');
         };
 
         try {
           await audio.play();
         } catch (error) {
-          console.error(
-            'Failed to play voice response:',
-            error
-          );
+          console.error('Failed to play voice response:', error);
 
           setIsQuestionSpeaking(false);
 
@@ -1883,10 +1531,7 @@ console.log('Question audio:', {
         }
       }
     } catch (error) {
-      console.error(
-        'Voice question failed:',
-        error
-      );
+      console.error('Voice question failed:', error);
 
       setQuestionError(
         error instanceof Error
@@ -1897,11 +1542,9 @@ console.log('Question audio:', {
       setIsQuestionProcessing(false);
     }
   };
-    const handleQuestionMicClick = () => {
-    if (
-      isQuestionProcessing ||
-      isQuestionSpeaking
-    ) {
+
+  const handleQuestionMicClick = () => {
+    if (isQuestionProcessing || isQuestionSpeaking) {
       return;
     }
 
@@ -1911,6 +1554,7 @@ console.log('Question audio:', {
       void startQuestionRecording();
     }
   };
+
   // =========================================================
   // RECORD SCREEN
   // =========================================================
@@ -1932,13 +1576,9 @@ console.log('Question audio:', {
 
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-sm">
-                Your Business
-              </span>
+              <span className="font-bold text-sm">Your Business</span>
 
-              <span className="text-sm">
-                👋
-              </span>
+              <span className="text-sm">👋</span>
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -1969,25 +1609,16 @@ console.log('Question audio:', {
           }`}
         >
           {isProcessing ? (
-            <Loader2
-              size={36}
-              className="text-blue-900 animate-spin"
-            />
+            <Loader2 size={36} className="text-blue-900 animate-spin" />
           ) : (
             <Mic
               size={36}
-              className={
-                isRecording
-                  ? 'text-white'
-                  : 'text-blue-900'
-              }
+              className={isRecording ? 'text-white' : 'text-blue-900'}
             />
           )}
         </button>
 
-        <h2 className="mt-4 font-bold text-lg">
-          {micStatusText}
-        </h2>
+        <h2 className="mt-4 font-bold text-lg">{micStatusText}</h2>
 
         <p className="text-xs text-blue-200 mt-1 max-w-xs leading-relaxed">
           {text(
@@ -2021,27 +1652,16 @@ console.log('Question audio:', {
         <div className="border-t border-slate-200 dark:border-slate-800 w-full" />
 
         <span className="bg-white dark:bg-slate-900 px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider absolute">
-          {text(
-            'OR WRITE',
-            'OBA WANDIIKA'
-          )}
+          {text('OR WRITE', 'OBA WANDIIKA')}
         </span>
       </div>
 
       {/* Manual Input Form */}
-      <form
-        onSubmit={handleSaveEntry}
-        className="space-y-3"
-      >
+      <form onSubmit={handleSaveEntry} className="space-y-3">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
           <Edit3 size={14} />
 
-          <span>
-            {text(
-              'Type manually',
-              "Wandiika n'Engalo"
-            )}
-          </span>
+          <span>{text('Type manually', "Wandiika n'Engalo")}</span>
         </div>
 
         <div>
@@ -2065,8 +1685,7 @@ console.log('Question audio:', {
               onChange={(e) =>
                 setFormData({
                   ...formData,
-                  customer:
-                    e.target.value,
+                  customer: e.target.value,
                 })
               }
               className={`w-full pl-9 pr-3 py-2 text-sm rounded-lg border outline-none ${
@@ -2080,10 +1699,7 @@ console.log('Question audio:', {
 
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-            {text(
-              'Item & Quantity',
-              'Ebyaguddwa'
-            )}
+            {text('Item & Quantity', 'Ebyaguddwa')}
           </label>
 
           <div className="relative">
@@ -2113,15 +1729,15 @@ console.log('Question audio:', {
 
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-            { text(
-  `Total Amount (${user.currency || 'UGX'})`,
-  `Omuwendo (${user.currency || 'UGX'})`
-)}
+            {text(
+              `Total Amount (${user.currency || 'UGX'})`,
+              `Omuwendo (${user.currency || 'UGX'})`
+            )}
           </label>
 
           <div className="relative">
             <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">
-            {user.currency || 'UGX'}
+              {user.currency || 'UGX'}
             </span>
 
             <input
@@ -2160,11 +1776,7 @@ console.log('Question audio:', {
           >
             <DollarSign size={16} />
 
-            💵{' '}
-            {text(
-              'Cash',
-              'Ensimbi'
-            )}
+            💵 {text('Cash', 'Ensimbi')}
           </button>
 
           <button
@@ -2183,11 +1795,7 @@ console.log('Question audio:', {
           >
             <CreditCard size={16} />
 
-            📒{' '}
-            {text(
-              'Credit',
-              'Omubanja'
-            )}
+            📒 {text('Credit', 'Omubanja')}
           </button>
         </div>
 
@@ -2197,11 +1805,7 @@ console.log('Question audio:', {
         >
           <CheckCircle size={16} />
 
-          {text(
-            'Save Entry',
-            'Kola'
-          )}{' '}
-          ✓
+          {text('Save Entry', 'Kola')} ✓
         </button>
 
         {formMessage && (
@@ -2221,11 +1825,9 @@ console.log('Question audio:', {
   // =========================================================
 
   const renderLedgersScreen = () => {
-    const totalSales =
-      summary?.totalSales ?? 0;
+    const totalSales = summary?.totalSales ?? 0;
 
-    const totalCreditOutstanding =
-      summary?.totalCreditOutstanding ?? 0;
+    const totalCreditOutstanding = summary?.totalCreditOutstanding ?? 0;
 
     return (
       <div className="space-y-4 relative min-h-[36.25rem]">
@@ -2244,14 +1846,11 @@ console.log('Question audio:', {
             />
 
             <span>
-              {new Date().toLocaleDateString(
-                undefined,
-                {
-                  weekday: 'long',
-                  day: 'numeric',
-                  month: 'short',
-                }
-              )}
+              {new Date().toLocaleDateString(undefined, {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'short',
+              })}
             </span>
 
             <ChevronRight
@@ -2274,53 +1873,38 @@ console.log('Question audio:', {
         <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-medium">
           <button
             type="button"
-            onClick={() =>
-              setTimeframe('daily')
-            }
+            onClick={() => setTimeframe('daily')}
             className={`py-1.5 rounded-lg transition ${
               timeframe === 'daily'
                 ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-900 dark:text-white font-bold'
                 : 'text-slate-500'
             }`}
           >
-            {text(
-              'Daily',
-              'Leero'
-            )}
+            {text('Daily', 'Leero')}
           </button>
 
           <button
             type="button"
-            onClick={() =>
-              setTimeframe('weekly')
-            }
+            onClick={() => setTimeframe('weekly')}
             className={`py-1.5 rounded-lg transition ${
               timeframe === 'weekly'
                 ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-900 dark:text-white font-bold'
                 : 'text-slate-500'
             }`}
           >
-            {text(
-              'Weekly',
-              'Sabiti'
-            )}
+            {text('Weekly', 'Sabiti')}
           </button>
 
           <button
             type="button"
-            onClick={() =>
-              setTimeframe('monthly')
-            }
+            onClick={() => setTimeframe('monthly')}
             className={`py-1.5 rounded-lg transition ${
               timeframe === 'monthly'
                 ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-900 dark:text-white font-bold'
                 : 'text-slate-500'
             }`}
           >
-            {text(
-              'Monthly',
-              "Omwezi"
-            )}
+            {text('Monthly', 'Omwezi')}
           </button>
         </div>
 
@@ -2329,50 +1913,38 @@ console.log('Question audio:', {
           <div className="flex justify-between items-start">
             <div>
               <span className="text-[11px] text-blue-200 uppercase font-semibold tracking-wider">
-                {text(
-                  'Total inflows',
-                  'Ebyakolwa'
-                )}
+                {text('Total inflows', 'Ebyakolwa')}
               </span>
 
-             <div className="text-2xl font-extrabold mt-0.5">
-              {isLoadingData
-              ? 'Loading...'
-              : formatCurrency(totalSales, user.currency)}
-             </div>
+              <div className="text-2xl font-extrabold mt-0.5">
+                {isLoadingData
+                  ? 'Loading...'
+                  : formatCurrency(totalSales, user.currency)}
+              </div>
 
-            <span className="inline-flex items-center text-xs font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
-              <TrendingUp
-                size={12}
-                className="mr-1"
-              />
-
-              Live
-            </span>
+              <span className="inline-flex items-center text-xs font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                <TrendingUp size={12} className="mr-1" />
+                Live
+              </span>
+            </div>
           </div>
-</div>
+
           <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-blue-800/60 text-xs">
             <div>
               <span className="text-blue-300 text-[11px]">
-                {text(
-                  'Cash in Hand',
-                  'Ssente eziri mu ngalo'
-                )}
+                {text('Cash in Hand', 'Ssente eziri mu ngalo')}
               </span>
 
               <p className="font-bold text-sm">
-  {isLoadingData
-    ? 'Loading...'
-    : formatCurrency(totalSales, user.currency)}
-</p>
+                {isLoadingData
+                  ? 'Loading...'
+                  : formatCurrency(totalSales, user.currency)}
+              </p>
             </div>
 
             <div>
               <span className="text-blue-300 text-[11px]">
-                {text(
-                  'Credit Given',
-                  'Amabanja agawereddwa'
-                )}
+                {text('Credit Given', 'Amabanja agawereddwa')}
               </span>
 
               <p className="font-bold text-sm text-amber-300">
@@ -2398,11 +1970,7 @@ console.log('Question audio:', {
               'Noonya omuguzi oba ekyaguddwa…'
             )}
             value={searchQuery}
-            onChange={(e) =>
-              setSearchQuery(
-                e.target.value
-              )
-            }
+            onChange={(e) => setSearchQuery(e.target.value)}
             className={`w-full pl-9 pr-9 py-2.5 text-xs rounded-xl border outline-none ${
               isDarkMode
                 ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500'
@@ -2416,11 +1984,9 @@ console.log('Question audio:', {
             className="absolute right-3 top-2.5 text-amber-500"
             aria-label="Ask DuukaTalk a question"
           >
-             <Mic size={16} />
+            <Mic size={16} />
           </button>
-
         </div>
-                
 
         {(isQuestionRecording ||
           isQuestionProcessing ||
@@ -2436,41 +2002,23 @@ console.log('Question audio:', {
             }`}
           >
             <div className="flex items-center gap-2">
-              <Mic
-                size={15}
-                className="text-amber-500"
-              />
+              <Mic size={15} className="text-amber-500" />
 
               <span className="text-xs font-bold">
                 {isQuestionRecording
-                  ? text(
-                      'Listening…',
-                      'Mpulira…'
-                    )
+                  ? text('Listening…', 'Mpulira…')
                   : isQuestionProcessing
-                    ? text(
-                        'Thinking…',
-                        'Ndowooza…'
-                      )
+                    ? text('Thinking…', 'Ndowooza…')
                     : isQuestionSpeaking
-                      ? text(
-                          'Speaking…',
-                          'Njogera…'
-                        )
-                      : text(
-                          'Voice Assistant',
-                          'Omuyambi w’eddoboozi'
-                        )}
+                      ? text('Speaking…', 'Njogera…')
+                      : text('Voice Assistant', 'Omuyambi w’eddoboozi')}
               </span>
             </div>
 
             {questionTranscript && (
               <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
                 <span className="font-semibold">
-                  {text(
-                    'You:',
-                    'Ggwe:'
-                  )}
+                  {text('You:', 'Ggwe:')}
                 </span>{' '}
                 {questionTranscript}
               </p>
@@ -2479,10 +2027,7 @@ console.log('Question audio:', {
             {questionAnswer && (
               <p className="mt-1.5 text-xs leading-relaxed">
                 <span className="font-semibold">
-                  {text(
-                    'DuukaTalk:',
-                    'DuukaTalk:'
-                  )}
+                  {text('DuukaTalk:', 'DuukaTalk:')}
                 </span>{' '}
                 {questionAnswer}
               </p>
@@ -2496,32 +2041,22 @@ console.log('Question audio:', {
           </div>
         )}
 
-
         {/* Transactions */}
         <div>
           <div className="flex justify-between items-center mb-2 px-1">
             <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-              {text(
-                'Transactions',
-                'Ebintu Ebyakozesebwa'
-              )}
+              {text('Transactions', 'Ebintu Ebyakozesebwa')}
             </span>
 
             <span className="text-[11px] text-slate-400">
-              {text(
-                'From your database',
-                'Okuva mu database yo'
-              )}
+              {text('From your database', 'Okuva mu database yo')}
             </span>
           </div>
 
           <div className="space-y-2">
             {isLoadingData && (
               <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-500">
-                <Loader2
-                  size={16}
-                  className="animate-spin"
-                />
+                <Loader2 size={16} className="animate-spin" />
 
                 {text(
                   'Loading your transactions...',
@@ -2530,91 +2065,91 @@ console.log('Question audio:', {
               </div>
             )}
 
-          {!isLoadingData &&
-  filteredTransactions.map((tx) => (
-    <div
-      key={tx.id}
-      className={`p-3 rounded-xl border ${
-        isDarkMode
-          ? 'bg-slate-800/60 border-slate-700/60'
-          : 'bg-white border-slate-100 shadow-sm'
-      }`}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 shrink-0 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
-            {tx.initials}
-          </div>
+            {!isLoadingData &&
+              filteredTransactions.map((tx) => (
+                <div
+                  key={tx.id}
+                  className={`p-3 rounded-xl border ${
+                    isDarkMode
+                      ? 'bg-slate-800/60 border-slate-700/60'
+                      : 'bg-white border-slate-100 shadow-sm'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 shrink-0 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
+                        {tx.initials}
+                      </div>
 
-          <div className="min-w-0">
-            <h4 className="text-xs font-bold truncate">
-              {tx.customer}
-            </h4>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold truncate">
+                          {tx.customer}
+                        </h4>
 
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-              {tx.item}
-            </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          {tx.item}
+                        </p>
 
-            <p className="text-[10px] text-slate-400 mt-0.5">
-              {tx.date}
-            </p>
-          </div>
-        </div>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {tx.date}
+                        </p>
+                      </div>
+                    </div>
 
-        <div className="text-right shrink-0">
-          <div className="text-xs font-bold">
-            {formatCurrency(tx.amount, user.currency)}
-          </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs font-bold">
+                        {formatCurrency(tx.amount, user.currency)}
+                      </div>
 
-          <div className="flex items-center justify-end gap-1.5 mt-1">
-            <span
-              className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
-                tx.type === 'cash'
-                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-              }`}
-            >
-              {tx.type === 'cash'
-                ? 'Cash'
-                : tx.dueDate || 'Credit'}
-            </span>
+                      <div className="flex items-center justify-end gap-1.5 mt-1">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            tx.type === 'cash'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                          }`}
+                        >
+                          {tx.type === 'cash'
+                            ? 'Cash'
+                            : tx.dueDate || 'Credit'}
+                        </span>
 
-            <button
-              type="button"
-              onClick={() => handleStartEdit(tx)}
-              className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900 transition"
-              aria-label={text(
-                `Edit transaction for ${tx.customer}`,
-                `Kyuusa ekiwandiiko kya ${tx.customer}`
-              )}
-              title={text(
-                'Edit transaction',
-                'Kyuusa ekiwandiiko'
-              )}
-            >
-              <Edit3 size={13} />
-            </button>
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(tx)}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900 transition"
+                          aria-label={text(
+                            `Edit transaction for ${tx.customer}`,
+                            `Kyuusa ekiwandiiko kya ${tx.customer}`
+                          )}
+                          title={text(
+                            'Edit transaction',
+                            'Kyuusa ekiwandiiko'
+                          )}
+                        >
+                          <Edit3 size={13} />
+                        </button>
 
-            <button
-              type="button"
-              onClick={() => handleStartDelete(tx)}
-              className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-900 transition"
-              aria-label={text(
-                `Delete transaction for ${tx.customer}`,
-                `Gyawo ekiwandiiko kya ${tx.customer}`
-              )}
-              title={text(
-                'Delete transaction',
-                'Gyawo ekiwandiiko'
-              )}
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  ))}
+                        <button
+                          type="button"
+                          onClick={() => handleStartDelete(tx)}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-900 transition"
+                          aria-label={text(
+                            `Delete transaction for ${tx.customer}`,
+                            `Gyawo ekiwandiiko kya ${tx.customer}`
+                          )}
+                          title={text(
+                            'Delete transaction',
+                            'Gyawo ekiwandiiko'
+                          )}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
       </div>
@@ -2634,19 +2169,14 @@ console.log('Question audio:', {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
         <div
           className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden ${
-            isDarkMode
-              ? 'bg-slate-900 text-white'
-              : 'bg-white text-slate-800'
+            isDarkMode ? 'bg-slate-900 text-white' : 'bg-white text-slate-800'
           }`}
         >
           {/* Modal Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
             <div>
               <h2 className="font-bold text-base">
-                {text(
-                  'Edit Transaction',
-                  'Kyuusa Ekiwandiiko'
-                )}
+                {text('Edit Transaction', 'Kyuusa Ekiwandiiko')}
               </h2>
 
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -2673,10 +2203,7 @@ console.log('Question audio:', {
             {/* Customer */}
             <div>
               <label className="block text-xs font-semibold mb-1.5 text-slate-600 dark:text-slate-300">
-                {text(
-                  'Customer',
-                  'Omuguzi'
-                )}
+                {text('Customer', 'Omuguzi')}
               </label>
 
               <div className="relative">
@@ -2687,14 +2214,11 @@ console.log('Question audio:', {
 
                 <input
                   type="text"
-                  value={
-                    editFormData.customer
-                  }
+                  value={editFormData.customer}
                   onChange={(event) =>
                     setEditFormData({
                       ...editFormData,
-                      customer:
-                        event.target.value,
+                      customer: event.target.value,
                     })
                   }
                   className={`w-full pl-9 pr-3 py-2.5 text-sm rounded-lg border outline-none ${
@@ -2709,10 +2233,7 @@ console.log('Question audio:', {
             {/* Item */}
             <div>
               <label className="block text-xs font-semibold mb-1.5 text-slate-600 dark:text-slate-300">
-                {text(
-                  'Item',
-                  'Ekyaguddwa'
-                )}
+                {text('Item', 'Ekyaguddwa')}
               </label>
 
               <div className="relative">
@@ -2723,9 +2244,7 @@ console.log('Question audio:', {
 
                 <input
                   type="text"
-                  value={
-                    editFormData.item
-                  }
+                  value={editFormData.item}
                   onChange={(event) =>
                     setEditFormData({
                       ...editFormData,
@@ -2744,10 +2263,7 @@ console.log('Question audio:', {
             {/* Amount */}
             <div>
               <label className="block text-xs font-semibold mb-1.5 text-slate-600 dark:text-slate-300">
-                {text(
-                  'Total Amount (UGX)',
-                  'Omuwendo (UGX)'
-                )}
+                {text('Total Amount (UGX)', 'Omuwendo (UGX)')}
               </label>
 
               <div className="relative">
@@ -2758,14 +2274,11 @@ console.log('Question audio:', {
                 <input
                   type="number"
                   min="1"
-                  value={
-                    editFormData.amount
-                  }
+                  value={editFormData.amount}
                   onChange={(event) =>
                     setEditFormData({
                       ...editFormData,
-                      amount:
-                        event.target.value,
+                      amount: event.target.value,
                     })
                   }
                   className={`w-full pl-12 pr-3 py-2.5 text-sm font-semibold rounded-lg border outline-none ${
@@ -2780,10 +2293,7 @@ console.log('Question audio:', {
             {/* Payment Type */}
             <div>
               <label className="block text-xs font-semibold mb-1.5 text-slate-600 dark:text-slate-300">
-                {text(
-                  'Payment Type',
-                  'Engeri y’okusasula'
-                )}
+                {text('Payment Type', 'Engeri y’okusasula')}
               </label>
 
               <div className="grid grid-cols-2 gap-2">
@@ -2792,22 +2302,16 @@ console.log('Question audio:', {
                   onClick={() =>
                     setEditFormData({
                       ...editFormData,
-                      paymentType:
-                        'cash',
+                      paymentType: 'cash',
                     })
                   }
                   className={`py-2.5 rounded-lg border text-xs font-semibold transition ${
-                    editFormData.paymentType ===
-                    'cash'
+                    editFormData.paymentType === 'cash'
                       ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
                       : 'border-slate-200 dark:border-slate-700 text-slate-500'
                   }`}
                 >
-                  💵{' '}
-                  {text(
-                    'Cash',
-                    'Ensimbi'
-                  )}
+                  💵 {text('Cash', 'Ensimbi')}
                 </button>
 
                 <button
@@ -2815,47 +2319,34 @@ console.log('Question audio:', {
                   onClick={() =>
                     setEditFormData({
                       ...editFormData,
-                      paymentType:
-                        'credit',
+                      paymentType: 'credit',
                     })
                   }
                   className={`py-2.5 rounded-lg border text-xs font-semibold transition ${
-                    editFormData.paymentType ===
-                    'credit'
+                    editFormData.paymentType === 'credit'
                       ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
                       : 'border-slate-200 dark:border-slate-700 text-slate-500'
                   }`}
                 >
-                  📒{' '}
-                  {text(
-                    'Credit',
-                    'Omubanja'
-                  )}
+                  📒 {text('Credit', 'Omubanja')}
                 </button>
               </div>
             </div>
 
             {/* Due Date */}
-            {editFormData.paymentType ===
-              'credit' && (
+            {editFormData.paymentType === 'credit' && (
               <div>
                 <label className="block text-xs font-semibold mb-1.5 text-slate-600 dark:text-slate-300">
-                  {text(
-                    'Due Date',
-                    'Olunaku lw’okusasula'
-                  )}
+                  {text('Due Date', 'Olunaku lw’okusasula')}
                 </label>
 
                 <input
                   type="date"
-                  value={
-                    editFormData.dueDate
-                  }
+                  value={editFormData.dueDate}
                   onChange={(event) =>
                     setEditFormData({
                       ...editFormData,
-                      dueDate:
-                        event.target.value,
+                      dueDate: event.target.value,
                     })
                   }
                   className={`w-full px-3 py-2.5 text-sm rounded-lg border outline-none ${
@@ -2882,10 +2373,7 @@ console.log('Question audio:', {
                 disabled={isSavingEdit}
                 className="py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:opacity-50"
               >
-                {text(
-                  'Cancel',
-                  'Sazaamu'
-                )}
+                {text('Cancel', 'Sazaamu')}
               </button>
 
               <button
@@ -2896,24 +2384,15 @@ console.log('Question audio:', {
               >
                 {isSavingEdit ? (
                   <>
-                    <Loader2
-                      size={15}
-                      className="animate-spin"
-                    />
+                    <Loader2 size={15} className="animate-spin" />
 
-                    {text(
-                      'Saving...',
-                      'Ntereka...'
-                    )}
+                    {text('Saving...', 'Ntereka...')}
                   </>
                 ) : (
                   <>
                     <Save size={15} />
 
-                    {text(
-                      'Save Changes',
-                      'Tereka Enkyukakyuka'
-                    )}
+                    {text('Save Changes', 'Tereka Enkyukakyuka')}
                   </>
                 )}
               </button>
@@ -2937,9 +2416,7 @@ console.log('Question audio:', {
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
         <div
           className={`w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden ${
-            isDarkMode
-              ? 'bg-slate-900 text-white'
-              : 'bg-white text-slate-800'
+            isDarkMode ? 'bg-slate-900 text-white' : 'bg-white text-slate-800'
           }`}
         >
           {/* Header */}
@@ -2951,10 +2428,7 @@ console.log('Question audio:', {
 
               <div>
                 <h2 className="font-bold text-base">
-                  {text(
-                    'Delete Transaction?',
-                    'Gyawo Ekiwandiiko?'
-                  )}
+                  {text('Delete Transaction?', 'Gyawo Ekiwandiiko?')}
                 </h2>
 
                 <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -2969,9 +2443,7 @@ console.log('Question audio:', {
             <button
               type="button"
               onClick={handleCancelDelete}
-              disabled={
-                isDeletingTransaction
-              }
+              disabled={isDeletingTransaction}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-50"
               aria-label="Close delete confirmation"
             >
@@ -2991,36 +2463,27 @@ console.log('Question audio:', {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-xs font-bold truncate">
-                    {
-                      deletingTransaction.customer
-                    }
+                    {deletingTransaction.customer}
                   </p>
 
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                    {
-                      deletingTransaction.item
-                    }
+                    {deletingTransaction.item}
                   </p>
                 </div>
 
                 <div className="text-right shrink-0">
                   <p className="text-xs font-bold">
-                    UGX{' '}
-                    {deletingTransaction.amount.toLocaleString()}
+                    UGX {deletingTransaction.amount.toLocaleString()}
                   </p>
 
                   <span
                     className={`inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-semibold ${
-                      deletingTransaction.type ===
-                      'cash'
+                      deletingTransaction.type === 'cash'
                         ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                         : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                     }`}
                   >
-                    {deletingTransaction.type ===
-                    'cash'
-                      ? 'Cash'
-                      : 'Credit'}
+                    {deletingTransaction.type === 'cash' ? 'Cash' : 'Credit'}
                   </span>
                 </div>
               </div>
@@ -3038,47 +2501,29 @@ console.log('Question audio:', {
               <button
                 type="button"
                 onClick={handleCancelDelete}
-                disabled={
-                  isDeletingTransaction
-                }
+                disabled={isDeletingTransaction}
                 className="py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:opacity-50"
               >
-                {text(
-                  'Cancel',
-                  'Sazaamu'
-                )}
+                {text('Cancel', 'Sazaamu')}
               </button>
 
               <button
                 type="button"
-                onClick={
-                  handleConfirmDelete
-                }
-                disabled={
-                  isDeletingTransaction
-                }
+                onClick={handleConfirmDelete}
+                disabled={isDeletingTransaction}
                 className="py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold flex items-center justify-center gap-2 transition disabled:opacity-60"
               >
                 {isDeletingTransaction ? (
                   <>
-                    <Loader2
-                      size={15}
-                      className="animate-spin"
-                    />
+                    <Loader2 size={15} className="animate-spin" />
 
-                    {text(
-                      'Deleting...',
-                      'Ngiggyawo...'
-                    )}
+                    {text('Deleting...', 'Ngiggyawo...')}
                   </>
                 ) : (
                   <>
                     <Trash2 size={15} />
 
-                    {text(
-                      'Delete',
-                      'Gyawo'
-                    )}
+                    {text('Delete', 'Gyawo')}
                   </>
                 )}
               </button>
@@ -3093,11 +2538,7 @@ console.log('Question audio:', {
   // DEBTS SCREEN
   // =========================================================
 
-  const totalDebts = debts.reduce(
-    (total, debt) =>
-      total + debt.amount,
-    0
-  );
+  const totalDebts = debts.reduce((total, debt) => total + debt.amount, 0);
 
   const renderDebtsScreen = () => (
     <div className="space-y-4">
@@ -3106,10 +2547,7 @@ console.log('Question audio:', {
         <div className="flex justify-between items-start">
           <div>
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-800">
-              {text(
-                'Outstanding debts',
-                'Amabanja gonna agakyaliwo'
-              )}
+              {text('Outstanding debts', 'Amabanja gonna agakyaliwo')}
             </span>
 
             <div className="text-2xl font-extrabold mt-0.5">
@@ -3119,23 +2557,16 @@ console.log('Question audio:', {
             </div>
           </div>
 
-          <AlertCircle
-            size={22}
-            className="text-slate-900"
-          />
+          <AlertCircle size={22} className="text-slate-900" />
         </div>
 
         <p className="text-xs mt-2 font-medium text-slate-800">
           {text(
             `${debts.length} customer ${
-              debts.length === 1
-                ? 'has'
-                : 'have'
+              debts.length === 1 ? 'has' : 'have'
             } outstanding credit.`,
             `${debts.length} ${
-              debts.length === 1
-                ? 'omuguzi alina'
-                : 'abaguzi balina'
+              debts.length === 1 ? 'omuguzi alina' : 'abaguzi balina'
             } amabanja agakyaliwo.`
           )}
         </p>
@@ -3143,22 +2574,16 @@ console.log('Question audio:', {
 
       <div className="flex justify-between items-center pt-2">
         <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-          {text(
-            'Active Debts',
-            'Amabanja agakyaliwo'
-          )}
+          {text('Active Debts', 'Amabanja agakyaliwo')}
         </h3>
 
         <button
           type="button"
           onClick={() => {
-            setFormData(
-              (currentForm) => ({
-                ...currentForm,
-                paymentType:
-                  'credit',
-              })
-            );
+            setFormData((currentForm) => ({
+              ...currentForm,
+              paymentType: 'credit',
+            }));
 
             setActiveTab('record');
           }}
@@ -3166,29 +2591,19 @@ console.log('Question audio:', {
         >
           <Plus size={14} />
 
-          {text(
-            'Add Debt',
-            'Yongera ibanja'
-          )}
+          {text('Add Debt', 'Yongera ibanja')}
         </button>
       </div>
 
       {debts
-        .filter(
-          (debt) => debt.amount > 200000
-        )
+        .filter((debt) => debt.amount > 200000)
         .map((debt) => (
           <div
             key={`limit-${debt.id}`}
             role="alert"
             className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
           >
-            <strong>
-              {text(
-                'Exceeded loan limit',
-                'Omusolo gw’obbanja gususse'
-              )}
-            </strong>
+            <strong>{text('Exceeded loan limit', 'Omusolo gw’obbanja gususse')}</strong>
 
             {`: ${debt.customer} has exceeded UGX 200,000 by UGX ${(debt.amount - 200000).toLocaleString()}.`}
           </div>
@@ -3198,15 +2613,9 @@ console.log('Question audio:', {
       <div className="space-y-2.5">
         {isLoadingDebts && (
           <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-500">
-            <Loader2
-              size={16}
-              className="animate-spin"
-            />
+            <Loader2 size={16} className="animate-spin" />
 
-            {text(
-              'Loading debts...',
-              'Tukikka amabanja...'
-            )}
+            {text('Loading debts...', 'Tukikka amabanja...')}
           </div>
         )}
 
@@ -3243,37 +2652,29 @@ console.log('Question audio:', {
 
                 <div className="text-right shrink-0">
                   <div className="text-xs font-extrabold text-amber-600 dark:text-amber-400">
-                    UGX{' '}
-                    {debt.amount.toLocaleString()}
+                    UGX {debt.amount.toLocaleString()}
                   </div>
 
                   <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-[10px] font-semibold">
-                    {text(
-                      'Credit',
-                      'Omubanja'
-                    )}
+                    {text('Credit', 'Omubanja')}
                   </span>
                 </div>
               </div>
             </div>
           ))}
 
-        {!isLoadingDebts &&
-          debts.length === 0 && (
-            <div className="py-8 text-center">
-              <CreditCard
-                size={28}
-                className="mx-auto text-slate-300 dark:text-slate-700 mb-2"
-              />
+        {!isLoadingDebts && debts.length === 0 && (
+          <div className="py-8 text-center">
+            <CreditCard
+              size={28}
+              className="mx-auto text-slate-300 dark:text-slate-700 mb-2"
+            />
 
-              <p className="text-xs text-slate-500">
-                {text(
-                  'No outstanding debts found.',
-                  'Tewali mabanja agakyaliwo.'
-                )}
-              </p>
-            </div>
-          )}
+            <p className="text-xs text-slate-500">
+              {text('No outstanding debts found.', 'Tewali mabanja agakyaliwo.')}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3292,84 +2693,40 @@ console.log('Question audio:', {
           ? 7 * 24 * 60 * 60 * 1000
           : 30 * 24 * 60 * 60 * 1000;
 
-    const periodTransactions =
-      transactions.filter(
-        (transaction) => {
-          const timestamp =
-            transaction.timestamp
-              ? new Date(
-                  transaction.timestamp
-                ).getTime()
-              : new Date(
-                  transaction.date
-                ).getTime();
+    const periodTransactions = transactions.filter((transaction) => {
+      const timestamp = transaction.timestamp
+        ? new Date(transaction.timestamp).getTime()
+        : new Date(transaction.date).getTime();
 
-          return (
-            Number.isNaN(timestamp) ||
-            now - timestamp <=
-              rangeMs
-          );
-        }
-      );
+      return Number.isNaN(timestamp) || now - timestamp <= rangeMs;
+    });
 
-    const cashSales =
-      periodTransactions
-        .filter(
-          (transaction) =>
-            transaction.type ===
-            'cash'
-        )
-        .reduce(
-          (total, transaction) =>
-            total + transaction.amount,
-          0
-        );
+    const cashSales = periodTransactions
+      .filter((transaction) => transaction.type === 'cash')
+      .reduce((total, transaction) => total + transaction.amount, 0);
 
-    const debtSales =
-      periodTransactions
-        .filter(
-          (transaction) =>
-            transaction.type ===
-            'credit'
-        )
-        .reduce(
-          (total, transaction) =>
-            total + transaction.amount,
-          0
-        );
+    const debtSales = periodTransactions
+      .filter((transaction) => transaction.type === 'credit')
+      .reduce((total, transaction) => total + transaction.amount, 0);
 
     return (
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-            {text(
-              'Business Insights',
-              'Ebikwata ku Dduuka'
-            )}
+            {text('Business Insights', 'Ebikwata ku Dduuka')}
           </h3>
 
           <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold">
-            {text(
-              'Live Data',
-              'Data Enkola'
-            )}
+            {text('Live Data', 'Data Enkola')}
           </span>
         </div>
 
         <div className="grid grid-cols-3 gap-1.5 rounded-xl bg-slate-100 p-1 text-xs font-medium dark:bg-slate-800">
-          {(
-            [
-              'daily',
-              'weekly',
-              'monthly',
-            ] as const
-          ).map((period) => (
+          {(['daily', 'weekly', 'monthly'] as const).map((period) => (
             <button
               type="button"
               key={period}
-              onClick={() =>
-                setTimeframe(period)
-              }
+              onClick={() => setTimeframe(period)}
               className={`rounded-lg py-1.5 ${
                 timeframe === period
                   ? 'bg-white font-bold text-blue-900 shadow-sm dark:bg-slate-700 dark:text-white'
@@ -3396,22 +2753,15 @@ console.log('Question audio:', {
             }`}
           >
             <span className="text-[11px] text-slate-500">
-              {text(
-                'Cash sales',
-                'Amagoba ga cash'
-              )}
+              {text('Cash sales', 'Amagoba ga cash')}
             </span>
 
             <div className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">
-              UGX{' '}
-              {cashSales.toLocaleString()}
+              UGX {cashSales.toLocaleString()}
             </div>
 
             <span className="text-[10px] text-emerald-600 font-semibold">
-              {text(
-                'From your database',
-                'Okuva mu database yo'
-              )}
+              {text('From your database', 'Okuva mu database yo')}
             </span>
           </div>
 
@@ -3423,23 +2773,75 @@ console.log('Question audio:', {
             }`}
           >
             <span className="text-[11px] text-slate-500">
-              {text(
-                'Debt sales',
-                'Amabanja agawereddwa'
-              )}
+              {text('Debt sales', 'Amabanja agawereddwa')}
             </span>
 
             <div className="text-base font-extrabold text-blue-600 dark:text-blue-400 mt-1">
-              UGX{' '}
-              {debtSales.toLocaleString()}
+              UGX {debtSales.toLocaleString()}
             </div>
 
             <span className="text-[10px] text-blue-600 font-semibold">
-              {text(
-                'From your database',
-                'Okuva mu database yo'
-              )}
+              {text('From your database', 'Okuva mu database yo')}
             </span>
+          </div>
+        </div>
+
+        {/* Savings & Loan Readiness Coach */}
+        <div
+          className={`p-4 rounded-xl border ${
+            isDarkMode
+              ? 'bg-slate-800/60 border-slate-700'
+              : 'bg-white border-slate-200'
+          }`}
+        >
+          <h4 className="mb-3 text-xs font-bold">
+            {text(
+              'Savings & Loan Readiness Coach',
+              'Omuwandiisi w’ensawo n’ensimbi'
+            )}
+          </h4>
+
+          <div className="space-y-3">
+            <div className="rounded-xl bg-emerald-50 p-3 dark:bg-emerald-950/30">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                  {text(
+                    'Loan readiness score',
+                    'Omuwendo gw’okukola olwanji'
+                  )}
+                </span>
+                <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-[10px] font-bold text-white">
+                  {summary?.loanReadinessScore ?? 0}
+                </span>
+              </div>
+              <div className="mt-2 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                {text(
+                  'Recommended savings target',
+                  'Ekiri mu kuteeka ssente'
+                )}
+                : UGX {summary?.recommendedSavings?.toLocaleString() ?? '0'}
+              </div>
+              <div className="mt-2 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                {text(
+                  'Cash vs credit in shop',
+                  'Ssente eziriwo vs amabanja'
+                )}
+                : {summary?.creditSharePercent ?? 0}%
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-blue-50 p-3 dark:bg-blue-950/30">
+              <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                {text('Coach advice', 'Okulabula kwa coach')}
+              </div>
+              <p className="mt-2 text-[11px] leading-5 text-slate-600 dark:text-slate-300">
+                {summary?.loanAdvice ||
+                  text(
+                    'Keep cash at hand above credit and save a percentage of sales each week. If your shop accounts are operating well, banks can give you a loan.',
+                    'Teeka ssente eziriwo okusukka amabanja era teeka ku bigobawo buli wiiki. Oba bizinensi yo ekola bulungi, banki ziyinza okukukkiriza olwanji.'
+                  )}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -3452,61 +2854,35 @@ console.log('Question audio:', {
           }`}
         >
           <h4 className="mb-3 text-xs font-bold">
-            {text(
-              'Database Activity',
-              'Ebikolwa mu Database'
-            )}
+            {text('Database Activity', 'Ebikolwa mu Database')}
           </h4>
 
           <div className="space-y-3">
             <div className="flex justify-between text-xs">
               <span className="text-slate-500">
-                {text(
-                  'Transactions recorded',
-                  'Transactions eziwandiikiddwa'
-                )}
+                {text('Transactions recorded', 'Transactions eziwandiikiddwa')}
+              </span>
+
+              <span className="font-bold">{transactions.length}</span>
+            </div>
+
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-500">
+                {text('Cash transactions', 'Transactions za Cash')}
               </span>
 
               <span className="font-bold">
-                {transactions.length}
+                {transactions.filter((transaction) => transaction.type === 'cash').length}
               </span>
             </div>
 
             <div className="flex justify-between text-xs">
               <span className="text-slate-500">
-                {text(
-                  'Cash transactions',
-                  'Transactions za Cash'
-                )}
+                {text('Credit transactions', 'Transactions za Credit')}
               </span>
 
               <span className="font-bold">
-                {
-                  transactions.filter(
-                    (transaction) =>
-                      transaction.type ===
-                      'cash'
-                  ).length
-                }
-              </span>
-            </div>
-
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-500">
-                {text(
-                  'Credit transactions',
-                  'Transactions za Credit'
-                )}
-              </span>
-
-              <span className="font-bold">
-                {
-                  transactions.filter(
-                    (transaction) =>
-                      transaction.type ===
-                      'credit'
-                  ).length
-                }
+                {transactions.filter((transaction) => transaction.type === 'credit').length}
               </span>
             </div>
           </div>
@@ -3522,171 +2898,121 @@ console.log('Question audio:', {
   return (
     <div
       className={`min-h-screen flex justify-center items-center ${
-        isDarkMode
-          ? 'bg-gray-950 text-white'
-          : 'bg-slate-100 text-slate-800'
+        isDarkMode ? 'bg-gray-950 text-white' : 'bg-slate-100 text-slate-800'
       }`}
     >
       <div
         className={`w-full max-w-md min-h-screen sm:min-h-0 sm:h-[52.5rem] sm:rounded-3xl shadow-2xl flex flex-col justify-between overflow-hidden relative ${
-          isDarkMode
-            ? 'bg-slate-900'
-            : 'bg-white'
+          isDarkMode ? 'bg-slate-900' : 'bg-white'
         }`}
       >
         {/* App Header */}
-    <header className="bg-blue-900 text-white px-5 py-4 flex items-center justify-between shadow-md">
-  <div className="flex items-center gap-2">
-    <div className="bg-amber-500 p-2 rounded-lg text-slate-900 font-bold">
-      <Mic size={18} />
-    </div>
+        <header className="bg-blue-900 text-white px-5 py-4 flex items-center justify-between shadow-md">
+          <div className="flex items-center gap-2">
+            <div className="bg-amber-500 p-2 rounded-lg text-slate-900 font-bold">
+              <Mic size={18} />
+            </div>
 
-    <h1 className="font-bold text-base leading-tight">
-      {user.businessName || 'DuukaTalk'}
-    </h1>
-  </div>
-
-  <div className="flex items-center gap-2">
-    <label
-      className="sr-only"
-      htmlFor="language-mode"
-    >
-      Language
-    </label>
-
-    <select
-      id="language-mode"
-      value={language}
-      onChange={(event) =>
-        handleLanguageChange(
-          event.target.value as Language
-        )
-      }
-      className="max-w-28 rounded-md border border-blue-600 bg-blue-800/80 px-2 py-1 text-xs font-semibold text-white outline-none"
-    >
-      {LANGUAGE_OPTIONS.map((option) => (
-        <option
-          key={option.value}
-          value={option.value}
-        >
-          {option.label}
-        </option>
-      ))}
-    </select>
-
-    {/* Notifications */}
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() =>
-          setShowNotifications(
-            (open) => !open
-          )
-        }
-        className="relative rounded-md p-1.5 text-blue-200 transition hover:bg-blue-800/80 hover:text-white"
-        aria-label={text(
-          'Notifications',
-          'Obubaka'
-        )}
-      >
-        <Bell size={18} />
-
-        {notifications.length > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-            {notifications.length > 9
-              ? '9+'
-              : notifications.length}
-          </span>
-        )}
-      </button>
-
-      {showNotifications && (
-        <div className="absolute right-0 top-10 z-50 w-72 rounded-xl border border-slate-200 bg-white p-3 text-slate-800 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-white">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-bold">
-              {text(
-                'Notifications',
-                'Obubaka'
-              )}
-            </h2>
-
-            <button
-              type="button"
-              onClick={() =>
-                setShowNotifications(false)
-              }
-              className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-white"
-              aria-label={text(
-                'Close notifications',
-                'Ggalawo obubaka'
-              )}
-            >
-              <X size={16} />
-            </button>
+            <h1 className="font-bold text-base leading-tight">
+              {user.businessName || 'DuukaTalk'}
+            </h1>
           </div>
 
-          {notifications.length === 0 ? (
-            <p className="py-4 text-center text-xs text-slate-500 dark:text-slate-400">
-              {text(
-                'No new notifications',
-                'Tewali bubaka bupya'
-              )}
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {notifications.map(
-                (notification) => (
-                  <div
-                    key={notification.id}
-                    className="rounded-lg bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
-                  >
-                    <div className="flex gap-2">
-                      <AlertCircle
-                        size={15}
-                        className="mt-0.5 shrink-0"
-                      />
+          <div className="flex items-center gap-2">
+            <label className="sr-only" htmlFor="language-mode">
+              Language
+            </label>
 
-                      <span>
-                        {notification.message}
-                      </span>
-                    </div>
+            <select
+              id="language-mode"
+              value={language}
+              onChange={(event) =>
+                handleLanguageChange(event.target.value as Language)
+              }
+              className="max-w-28 rounded-md border border-blue-600 bg-blue-800/80 px-2 py-1 text-xs font-semibold text-white outline-none"
+            >
+              {LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            {/* Notifications */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowNotifications((open) => !open)}
+                className="relative rounded-md p-1.5 text-blue-200 transition hover:bg-blue-800/80 hover:text-white"
+                aria-label={text('Notifications', 'Obubaka')}
+              >
+                <Bell size={18} />
+
+                {notifications.length > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                    {notifications.length > 9 ? '9+' : notifications.length}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div className="absolute right-0 top-10 z-50 w-72 rounded-xl border border-slate-200 bg-white p-3 text-slate-800 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 className="text-sm font-bold">
+                      {text('Notifications', 'Obubaka')}
+                    </h2>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowNotifications(false)}
+                      className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-white"
+                      aria-label={text('Close notifications', 'Ggalawo obubaka')}
+                    >
+                      <X size={16} />
+                    </button>
                   </div>
-                )
+
+                  {notifications.length === 0 ? (
+                    <p className="py-4 text-center text-xs text-slate-500 dark:text-slate-400">
+                      {text('No new notifications', 'Tewali bubaka bupya')}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {notifications.map((notification) => (
+                        <div
+                          key={notification.id}
+                          className="rounded-lg bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+                        >
+                          <div className="flex gap-2">
+                            <AlertCircle size={15} className="mt-0.5 shrink-0" />
+
+                            <span>{notification.message}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
-      )}
-    </div>
 
-    {/* Settings */}
-    <button
-      type="button"
-      onClick={() =>
-        setIsSettingsOpen(
-          (open) => !open
-        )
-      }
-      className="rounded-md p-1.5 text-blue-200 transition hover:bg-blue-800/80 hover:text-white"
-      aria-label={text(
-        'Settings',
-        'Settings'
-      )}
-    >
-      <Settings size={18} />
-    </button>
-  </div>
-</header>
+            {/* Settings */}
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen((open) => !open)}
+              className="rounded-md p-1.5 text-blue-200 transition hover:bg-blue-800/80 hover:text-white"
+              aria-label={text('Settings', 'Settings')}
+            >
+              <Settings size={18} />
+            </button>
+          </div>
+        </header>
+
         {/* SETTINGS */}
         {isSettingsOpen && (
           <div className="absolute right-3 top-16 z-20 w-64 rounded-xl border border-slate-200 bg-white p-3 text-slate-800 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-white">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-bold">
-                {text(
-                  'Settings',
-                  'Settings'
-                )}
-              </h2>
+              <h2 className="text-sm font-bold">{text('Settings', 'Settings')}</h2>
 
               <button
                 type="button"
@@ -3694,46 +3020,28 @@ console.log('Question audio:', {
                 aria-label="Toggle theme"
                 className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-700"
               >
-                {isDarkMode ? (
-                  <Sun size={16} />
-                ) : (
-                  <Moon size={16} />
-                )}
+                {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
               </button>
             </div>
 
             <button
               type="button"
-              onClick={() =>
-                setIsPrivacyOpen(
-                  (open) => !open
-                )
-              }
+              onClick={() => setIsPrivacyOpen((open) => !open)}
               className="mb-2 w-full rounded-lg bg-slate-100 px-3 py-2 text-left text-xs font-semibold dark:bg-slate-700"
             >
-              {text(
-                'Privacy',
-                'Obukuumi'
-              )}
+              {text('Privacy', 'Obukuumi')}
             </button>
 
             {isPrivacyOpen && (
               <div className="space-y-2">
                 <p className="text-[11px] text-slate-500">
-                  {text(
-                    'Change PIN or phone number',
-                    'Kyusa PIN oba essimu'
-                  )}
+                  {text('Change PIN or phone number', 'Kyusa PIN oba essimu')}
                 </p>
 
                 <input
                   value={newPin}
                   onChange={(event) =>
-                    setNewPin(
-                      event.target.value
-                        .replace(/\D/g, '')
-                        .slice(0, 4)
-                    )
+                    setNewPin(event.target.value.replace(/\D/g, '').slice(0, 4))
                   }
                   placeholder="New 4-digit PIN"
                   className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs dark:border-slate-600 dark:bg-slate-900"
@@ -3742,32 +3050,21 @@ console.log('Question audio:', {
 
                 <input
                   value={newPhone}
-                  onChange={(event) =>
-                    setNewPhone(
-                      event.target.value
-                    )
-                  }
+                  onChange={(event) => setNewPhone(event.target.value)}
                   placeholder="Phone number"
                   className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs dark:border-slate-600 dark:bg-slate-900"
                 />
 
                 <button
                   type="button"
-                  onClick={() =>
-                    void handleSavePrivacy()
-                  }
+                  onClick={() => void handleSavePrivacy()}
                   className="w-full rounded-lg bg-blue-900 px-3 py-2 text-xs font-semibold text-white"
                 >
-                  {text(
-                    'Save changes',
-                    'Tereka enkyukakyuka'
-                  )}
+                  {text('Save changes', 'Tereka enkyukakyuka')}
                 </button>
 
                 {settingsMessage && (
-                  <p className="text-[11px] text-emerald-600">
-                    {settingsMessage}
-                  </p>
+                  <p className="text-[11px] text-emerald-600">{settingsMessage}</p>
                 )}
               </div>
             )}
@@ -3779,80 +3076,49 @@ console.log('Question audio:', {
             >
               <LogOut size={15} />
 
-              {text(
-                'Log out',
-                'Fuluma'
-              )}
+              {text('Log out', 'Fuluma')}
             </button>
           </div>
         )}
 
         {/* Dynamic View Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {activeTab === 'record' &&
-            renderRecordScreen()}
+          {activeTab === 'record' && renderRecordScreen()}
 
-          {activeTab === 'ledgers' &&
-            renderLedgersScreen()}
+          {activeTab === 'ledgers' && renderLedgersScreen()}
 
-          {activeTab === 'debts' &&
-            renderDebtsScreen()}
+          {activeTab === 'debts' && renderDebtsScreen()}
 
-          {activeTab === 'reports' &&
-            renderReportsScreen()}
+          {activeTab === 'reports' && renderReportsScreen()}
         </div>
 
         {/* Bottom Navigation */}
         <nav
           className={`border-t flex justify-around py-2 px-1 ${
-            isDarkMode
-              ? 'bg-slate-900 border-slate-800'
-              : 'bg-white border-slate-200'
+            isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
           }`}
         >
-          {navItems.map(
-            ({
-              name,
-              tab,
-              icon: Icon,
-            }) => {
-              const isActive =
-                activeTab === tab;
+          {navItems.map(({ name, tab, icon: Icon }) => {
+            const isActive = activeTab === tab;
 
-              return (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() =>
-                    setActiveTab(tab)
-                  }
-                  aria-current={
-                    isActive
-                      ? 'page'
-                      : undefined
-                  }
-                  className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-xs font-medium transition ${
-                    isActive
-                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-                      : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <Icon
-                    size={18}
-                    strokeWidth={
-                      isActive
-                        ? 2.5
-                        : 2
-                    }
-                  />
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-xs font-medium transition ${
+                  isActive
+                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                    : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
 
-                  <span className="truncate">
-                    {text(name)}
-                  </span>
-                </button>
-              );
-            }
-          )}
+                <span className="truncate">{text(name)}</span>
+              </button>
+            );
+          })}
         </nav>
       </div>
 
