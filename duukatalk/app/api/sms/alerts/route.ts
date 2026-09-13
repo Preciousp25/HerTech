@@ -14,8 +14,9 @@ async function dispatchAlertSms(request: NextRequest, bodyOverride?: { language?
   const queryLanguage = request.nextUrl.searchParams.get("language");
   const bodyLanguage = bodyOverride?.language;
   const language = parseLanguage(bodyLanguage || queryLanguage);
+  const vendorId = request.cookies.get("duukatalk_vendor_id")?.value;
 
-  const sms = await dispatchVendorAlertSms(language);
+  const sms = await dispatchVendorAlertSms(language, undefined, vendorId);
   return NextResponse.json({ ok: true, ...sms });
 }
 

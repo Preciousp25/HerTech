@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { collection, doc, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, setDoc } from "firebase/firestore";
 import { getAiProvider } from "@/lib/ai-provider";
 import {
   VoiceToJsonResponse,
@@ -11,6 +11,8 @@ import { toFirestoreTransaction } from "@/lib/firestore-transaction";
 import { updateCustomerCredit } from "@/lib/updateCustomerCredit";
 import { notifyAfterTransaction } from "@/lib/notify-transaction";
 import { getNextTransactionId } from "@/lib/transaction-id";
+import { CREDIT_LIMIT, normalizeCustomerName } from "@/lib/credit";
+import { localize, parseLanguage } from "@/lib/risk-flags";
 
 export const runtime = "nodejs";
 
@@ -92,6 +94,8 @@ export async function POST(
   }
 
   const mimeType = audioEntry.type || "audio/webm";
+  const requestedLanguage = parseLanguage(formData.get("language")?.toString() ?? "EN");
+  const acknowledgedWarning = formData.get("acknowledgedWarning") === "true";
 
   // --------------------------------------------------
   // 4. Convert audio to a Buffer
@@ -160,6 +164,31 @@ export async function POST(
       timestamp
     );
 
+    if (transaction.paymentType === "credit" && transaction.customerName) {
+      const customerKey = `${vendorId}_${normalizeCustomerName(transaction.customerName)}`;
+      const customerSnap = await getDoc(doc(db, "customers", customerKey));
+      const outstandingCredit = customerSnap.exists()
+        ? Number(customerSnap.data().outstanding_credit || 0)
+        : 0;
+
+      if (outstandingCredit >= CREDIT_LIMIT && acknowledgedWarning !== true) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: localize(
+              requestedLanguage,
+              `Warning: ${transaction.customerName} already has UGX ${outstandingCredit.toLocaleString()} in outstanding credit, above the UGX ${CREDIT_LIMIT.toLocaleString()} limit. Pause new lending and recover cash first. Use the tick to accept the warning and record, or use the cross to refuse.`,
+              `Okulabula: ${transaction.customerName} alina amabanja agasigadde UGX ${outstandingCredit.toLocaleString()}, okusukka ku kkomo lya UGX ${CREDIT_LIMIT.toLocaleString()}. Lekeka okukuza obulava obupya era funya ssente. Kozesa akatikkulu okukkiriza okulabula n'okuwandiika, oba akamukiye okugaana.`,
+              `Tahadhari: ${transaction.customerName} tayari ana deni la UGX ${outstandingCredit.toLocaleString()}, lililo juu ya kikomo cha UGX ${CREDIT_LIMIT.toLocaleString()}. Simama kutoa mkopo mpya na kukusanya pesa kwanza. Tumia alama ya tiki kukubali tahadhari na kurekodi, au alama ya x kukataa.`,
+              `تحذير: ${transaction.customerName} لديه بالفعل ديون مستحقة قدرها UGX ${outstandingCredit.toLocaleString()}، وهي أعلى من الحد UGX ${CREDIT_LIMIT.toLocaleString()}. أوقف منح القروض الجديدة وابدأ في تحصيل النقد أولاً. استخدم علامة صح للتأكيد أو علامة × للرفض.`,
+              `Avertissement : ${transaction.customerName} a déjà un crédit impayé de UGX ${outstandingCredit.toLocaleString()}, au-dessus de la limite de UGX ${CREDIT_LIMIT.toLocaleString()}. Suspendre tout nouveau prêt et récupérer l’argent d’abord. Utilisez la coche pour accepter l’avertissement et enregistrer, ou la croix pour refuser.`,
+            ),
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     // --------------------------------------------------
     // 8. Generate transaction ID and Firestore reference
     // --------------------------------------------------
@@ -206,16 +235,14 @@ export async function POST(
       transaction.customerName
     ) {
       outstandingCredit =
-        (await updateCustomerCredit(
-          transaction.customerName
-        )) ?? undefined;
+        (await updateCustomerCredit(vendorId, transaction.customerName, transaction.totalAmount)) ?? undefined;
     }
 
     // --------------------------------------------------
-    // 12. Send transaction notification
+    // 12. Send transaction notification asynchronously
     // --------------------------------------------------
 
-    const sms = await notifyAfterTransaction({
+    void notifyAfterTransaction({
       customerName: transaction.customerName,
       paymentType: transaction.paymentType,
       item: transaction.item,
@@ -223,6 +250,10 @@ export async function POST(
       quantity: transaction.quantity,
       dueDate: transaction.dueDate,
       outstandingCredit,
+      language: requestedLanguage,
+      vendorId,
+    }).catch((error) => {
+      console.error("Background notification fan-out failed:", error);
     });
 
     // --------------------------------------------------
@@ -235,7 +266,6 @@ export async function POST(
         transcript: result.transcript,
         transaction,
         transactionId: docRef.id,
-        sms,
       },
       { status: 200 }
     );

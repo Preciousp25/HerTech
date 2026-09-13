@@ -195,28 +195,6 @@ export async function syncOfflineVoiceNotes(): Promise<{ synced: number; remaini
         continue;
       }
 
-      const customer = (transaction.customerName as string | null) || "Unknown customer";
-      const quantity = typeof transaction.quantity === "number" ? transaction.quantity : 1;
-      const unitPrice = typeof transaction.unitPrice === "number" ? transaction.unitPrice : 0;
-
-      const ledgerResponse = await fetch("/api/ledger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer,
-          item: (transaction.item as string) || "Recorded item",
-          amount: quantity * unitPrice,
-          paymentType: transaction.paymentType === "credit" ? "credit" : "cash",
-          dueDate: transaction.dueDate ?? null,
-        }),
-      });
-      if (!ledgerResponse.ok) {
-        console.error(`Voice note ${note.id} failed at ledger save:`, ledgerResponse.status, await ledgerResponse.text().catch(() => ""));
-        await removeOfflineVoiceNote(note.id);
-        failed += 1;
-        continue;
-      }
-
       await removeOfflineVoiceNote(note.id);
       synced += 1;
     } catch (err) {

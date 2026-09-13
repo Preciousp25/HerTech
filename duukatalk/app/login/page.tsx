@@ -22,6 +22,8 @@ import {
   translate,
 } from '@/lib/i18n';
 
+
+
 type AuthMode = 'signup' | 'login';
 
 interface AuthApiResponse {
